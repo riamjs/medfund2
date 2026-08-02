@@ -18,7 +18,7 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "Milestone-verified medical fundraising. Donations sit in escrow until a hospital or NGO confirms treatment.",
+          "Donate USDC into escrow. Funds release only when a hospital or NGO verifies the treatment milestone — every step visible on-chain.",
       },
     ],
   }),

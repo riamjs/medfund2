@@ -82,6 +82,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "author", content: "MedFund" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { title: "MedFund — Escrowed Medical Fundraising in the Philippines" },
+      { property: "og:title", content: "MedFund — Escrowed Medical Fundraising in the Philippines" },
+      { name: "twitter:title", content: "MedFund — Escrowed Medical Fundraising in the Philippines" },
+      { name: "description", content: "Donate USDC into escrow. Funds release only when a hospital or NGO verifies the treatment milestone — every step visible on-chain." },
+      { property: "og:description", content: "Donate USDC into escrow. Funds release only when a hospital or NGO verifies the treatment milestone — every step visible on-chain." },
+      { name: "twitter:description", content: "Donate USDC into escrow. Funds release only when a hospital or NGO verifies the treatment milestone — every step visible on-chain." },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/aaf8d14b-1706-4329-82ad-6404b5d623c4" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/aaf8d14b-1706-4329-82ad-6404b5d623c4" },
     ],
     links: [
       {
