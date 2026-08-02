@@ -10,33 +10,63 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CreateRouteImport } from './routes/create'
+import { Route as FundraisersIndexRouteImport } from './routes/fundraisers.index'
+import { Route as FundraisersIdRouteImport } from './routes/fundraisers.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CreateRoute = CreateRouteImport.update({
+  id: '/create',
+  path: '/create',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FundraisersIndexRoute = FundraisersIndexRouteImport.update({
+  id: '/fundraisers/',
+  path: '/fundraisers/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FundraisersIdRoute = FundraisersIdRouteImport.update({
+  id: '/fundraisers/$id',
+  path: '/fundraisers/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/create': typeof CreateRoute
+  '/fundraisers/$id': typeof FundraisersIdRoute
+  '/fundraisers/': typeof FundraisersIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/create': typeof CreateRoute
+  '/fundraisers/$id': typeof FundraisersIdRoute
+  '/fundraisers': typeof FundraisersIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/create': typeof CreateRoute
+  '/fundraisers/$id': typeof FundraisersIdRoute
+  '/fundraisers/': typeof FundraisersIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/create' | '/fundraisers/$id' | '/fundraisers/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/create' | '/fundraisers/$id' | '/fundraisers'
+  id: '__root__' | '/' | '/create' | '/fundraisers/$id' | '/fundraisers/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CreateRoute: typeof CreateRoute
+  FundraisersIdRoute: typeof FundraisersIdRoute
+  FundraisersIndexRoute: typeof FundraisersIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +78,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/create': {
+      id: '/create'
+      path: '/create'
+      fullPath: '/create'
+      preLoaderRoute: typeof CreateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fundraisers/': {
+      id: '/fundraisers/'
+      path: '/fundraisers'
+      fullPath: '/fundraisers/'
+      preLoaderRoute: typeof FundraisersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fundraisers/$id': {
+      id: '/fundraisers/$id'
+      path: '/fundraisers/$id'
+      fullPath: '/fundraisers/$id'
+      preLoaderRoute: typeof FundraisersIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CreateRoute: CreateRoute,
+  FundraisersIdRoute: FundraisersIdRoute,
+  FundraisersIndexRoute: FundraisersIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
