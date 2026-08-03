@@ -11,7 +11,9 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { SiteHeader, SiteFooter } from "../components/SiteChrome";
+import { SiteChrome } from "../components/SiteChrome";
+import { Toaster } from "@/components/ui/sonner";
+
 
 
 function NotFoundComponent() {
@@ -135,15 +137,13 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex min-h-screen flex-col">
-        <SiteHeader />
-        <main className="flex-1">
-          {/* Required: nested routes render here. */}
-          <Outlet />
-        </main>
-        <SiteFooter />
-      </div>
+      <SiteChrome>
+        {/* Required: nested routes render here. */}
+        <Outlet />
+      </SiteChrome>
+      <Toaster richColors position="top-center" />
     </QueryClientProvider>
   );
 }
+
 

@@ -1,397 +1,264 @@
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { myVerifierQuery, verifierQueueQuery } from "@/lib/data";
+import { formatDate, usd, type MilestoneStatus } from "@/lib/medfund";
+import { isStellarAddress } from "@/lib/stellar-config";
+import { decideMilestone } from "@/lib/medfund.functions";
 import {
-  applyAsVerifier,
-  formatDate,
-  updateVerifierAddress,
-  usd,
-  useStore,
-  verifierSignIn,
-  verifierSignOut,
-  verifyMilestone,
-  type VerifierAccount,
-} from "@/lib/medfund";
-import { Progress, StatusBadge, TxFeedback, type Tx } from "@/components/ui-bits";
+  EmptyState,
+  Loading,
+  MilestoneBadge,
+  TxFeedback,
+  buttonClass,
+  ghostButtonClass,
+  inputClass,
+  monoInputClass,
+  type Tx,
+} from "@/components/ui-bits";
 
 export const Route = createFileRoute("/verifier")({
   head: () => ({
     meta: [
-      { title: "Verifier Portal — Hospitals & NGOs | MedFund" },
+      { title: "Verifier Portal — MedFund" },
       {
         name: "description",
         content:
-          "Approved hospitals and NGOs sign in to manage their Stellar verifier address and review pending milestone verification requests.",
+          "Hospitals and NGOs review milestone evidence and release escrowed USDC to patients on the Stellar network.",
       },
-      { property: "og:title", content: "Verifier Portal — Hospitals & NGOs | MedFund" },
+      { property: "og:title", content: "Verifier Portal — MedFund" },
       {
         property: "og:description",
         content:
-          "Onboard as a MedFund verifier, keep your escrow signing address current, and release funds when treatment milestones are met.",
+          "Review milestone evidence and release escrowed medical funds on-chain.",
       },
     ],
   }),
   component: VerifierPage,
 });
 
-const input =
-  "w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-foreground/40";
-const label =
-  "font-mono text-[11px] uppercase tracking-wider text-muted-foreground";
-
 function VerifierPage() {
-  const { verifiers, verifierSession } = useStore();
-  const account = verifiers.find((v) => v.id === verifierSession) ?? null;
+  const { userId, loading } = useAuth();
+  const qc = useQueryClient();
+  const { data: verifier, isLoading } = useQuery(myVerifierQuery(userId));
+  const { data: queue = [] } = useQuery(verifierQueueQuery(verifier?.id ?? null));
 
-  return (
-    <div className="mx-auto max-w-3xl px-5 py-12">
-      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-        Hospitals & NGOs
-      </p>
-      <h1 className="mt-2 text-3xl sm:text-4xl">Verifier portal</h1>
-      <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
-        Verifiers are the only parties who can release escrowed funds. Sign in
-        with your access code to manage your signing address and review the
-        milestones waiting on your confirmation.
-      </p>
-
-      <div className="my-8 rule-line" />
-
-      {account ? <Dashboard account={account} /> : <SignedOut />}
-    </div>
-  );
-}
-
-function SignedOut() {
-  return (
-    <div className="grid gap-8 sm:grid-cols-2">
-      <SignInPanel />
-      <ApplyPanel />
-    </div>
-  );
-}
-
-function SignInPanel() {
-  const [code, setCode] = useState("");
-  const [error, setError] = useState("");
-
-  return (
-    <section className="rounded-lg border border-border bg-card p-5">
-      <h2 className="text-xl">Approved verifier sign-in</h2>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Use the access code issued to your institution when it was approved.
-      </p>
-      <form
-        className="mt-5 space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const ok = verifierSignIn(code);
-          setError(ok ? "" : "No approved verifier matches that code.");
-        }}
-      >
-        <div className="space-y-1.5">
-          <label className={label} htmlFor="code">
-            Access code
-          </label>
-          <input
-            id="code"
-            className={input}
-            placeholder="CHH-2026"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-          />
-        </div>
-        <button
-          type="submit"
-          className="w-full rounded-md bg-primary px-4 py-2 font-mono text-xs tracking-wide text-primary-foreground transition-opacity hover:opacity-90"
-        >
-          Sign in
-        </button>
-        {error && (
-          <p className="font-mono text-[11px] text-destructive">{error}</p>
-        )}
-        <p className="font-mono text-[11px] leading-relaxed text-muted-foreground">
-          Demo codes · CHH-2026 · KYT-2026 · SPM-2026
-        </p>
-      </form>
-    </section>
-  );
-}
-
-function ApplyPanel() {
-  const [org, setOrg] = useState("");
-  const [kind, setKind] = useState<"Hospital" | "NGO">("Hospital");
-  const [contact, setContact] = useState("");
   const [address, setAddress] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<VerifierAccount | null>(null);
+  const [tx, setTx] = useState<Tx>({ state: "idle" });
+  const [apply, setApply] = useState({
+    org: "",
+    kind: "Hospital" as "Hospital" | "NGO",
+    contact: "",
+    address: "",
+  });
 
-  if (done) {
+  if (loading || isLoading)
     return (
-      <section className="rounded-lg border border-border bg-card p-5">
-        <h2 className="text-xl">Application received</h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          {done.org} is queued for review. MedFund verifies licence and billing
-          records before issuing an access code to {done.contact}.
-        </p>
-        <dl className="mt-4 space-y-2 font-mono text-[11px] text-muted-foreground">
-          <div className="flex justify-between gap-3">
-            <dt>STATUS</dt>
-            <dd className="text-foreground">Pending approval</dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt>SUBMITTED</dt>
-            <dd>{formatDate(done.appliedAt)}</dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt>ADDRESS</dt>
-            <dd className="truncate">{done.address}</dd>
-          </div>
-        </dl>
-      </section>
+      <div className="mx-auto max-w-4xl px-5 py-12">
+        <Loading />
+      </div>
     );
-  }
 
-  return (
-    <section className="rounded-lg border border-border bg-card p-5">
-      <h2 className="text-xl">Apply to verify</h2>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Hospitals and NGOs can apply to become milestone verifiers.
-      </p>
-      <form
-        className="mt-5 space-y-3"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          const acct = await applyAsVerifier({ org, kind, contact, address });
-          setBusy(false);
-          setDone(acct);
-        }}
-      >
-        <div className="space-y-1.5">
-          <label className={label} htmlFor="org">
-            Institution name
-          </label>
+  if (!userId)
+    return (
+      <div className="mx-auto max-w-2xl px-5 py-16 text-center">
+        <h1 className="text-3xl">Verifier portal</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Sign in with your hospital or NGO account to review milestones.
+        </p>
+        <a href="/auth" className={`${buttonClass} mt-6 inline-block`}>
+          Sign in
+        </a>
+      </div>
+    );
+
+  const submitApplication = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!apply.org || !apply.contact) {
+      setTx({ state: "error", message: "Organisation and contact are required" });
+      return;
+    }
+    setTx({ state: "pending", message: "Submitting application…" });
+    const { error } = await supabase.from("verifiers").insert({
+      user_id: userId,
+      org: apply.org,
+      kind: apply.kind,
+      contact: apply.contact,
+      stellar_address: apply.address || null,
+      approved: false,
+      slug: apply.org.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40),
+    });
+    if (error) setTx({ state: "error", message: error.message });
+    else {
+      setTx({ state: "success", message: "Application submitted for review" });
+      qc.invalidateQueries({ queryKey: ["verifier", "mine"] });
+    }
+  };
+
+  if (!verifier)
+    return (
+      <div className="mx-auto max-w-2xl px-5 py-12">
+        <h1 className="text-3xl sm:text-4xl">Apply as a verifier</h1>
+        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+          Hospitals and NGOs confirm that treatment actually happened. Once approved,
+          you can release escrowed USDC milestone by milestone.
+        </p>
+        <form onSubmit={submitApplication} className="mt-8 space-y-4">
           <input
-            id="org"
-            required
-            className={input}
-            placeholder="Chong Hua Hospital"
-            value={org}
-            onChange={(e) => setOrg(e.target.value)}
+            className={inputClass}
+            placeholder="Organisation name"
+            value={apply.org}
+            onChange={(e) => setApply({ ...apply, org: e.target.value })}
           />
-        </div>
-        <div className="space-y-1.5">
-          <label className={label} htmlFor="kind">
-            Type
-          </label>
           <select
-            id="kind"
-            className={input}
-            value={kind}
-            onChange={(e) => setKind(e.target.value as "Hospital" | "NGO")}
+            className={inputClass}
+            value={apply.kind}
+            onChange={(e) =>
+              setApply({ ...apply, kind: e.target.value as "Hospital" | "NGO" })
+            }
           >
             <option value="Hospital">Hospital</option>
             <option value="NGO">NGO</option>
           </select>
-        </div>
-        <div className="space-y-1.5">
-          <label className={label} htmlFor="contact">
-            Official contact email
-          </label>
           <input
-            id="contact"
-            required
-            type="email"
-            className={input}
-            placeholder="billing@hospital.ph"
-            value={contact}
-            onChange={(e) => setContact(e.target.value)}
+            className={inputClass}
+            placeholder="Contact email"
+            value={apply.contact}
+            onChange={(e) => setApply({ ...apply, contact: e.target.value })}
           />
-        </div>
-        <div className="space-y-1.5">
-          <label className={label} htmlFor="addr">
-            Stellar verifier address
-          </label>
           <input
-            id="addr"
-            required
-            className={input}
+            className={monoInputClass}
+            placeholder="Stellar address (optional)"
+            value={apply.address}
+            onChange={(e) => setApply({ ...apply, address: e.target.value })}
+          />
+          <button type="submit" className={`${buttonClass} w-full`}>
+            Submit application
+          </button>
+          <TxFeedback tx={tx} />
+        </form>
+      </div>
+    );
+
+  const saveAddress = async () => {
+    if (!isStellarAddress(address)) {
+      setTx({ state: "error", message: "Enter a valid Stellar address (G…)" });
+      return;
+    }
+    setTx({ state: "pending", message: "Saving signing address…" });
+    const { error } = await supabase
+      .from("verifiers")
+      .update({ stellar_address: address })
+      .eq("id", verifier.id);
+    if (error) setTx({ state: "error", message: error.message });
+    else {
+      setTx({ state: "success", message: "Signing address updated" });
+      qc.invalidateQueries({ queryKey: ["verifier", "mine"] });
+    }
+  };
+
+  const decide = async (milestoneId: string, approve: boolean) => {
+    setTx({
+      state: "pending",
+      message: approve ? "Releasing funds from escrow…" : "Returning for evidence…",
+    });
+    try {
+      const res = await decideMilestone({ data: { milestoneId, approve } });
+      setTx({
+        state: "success",
+        message: approve ? "Milestone verified and paid out" : "Sent back for evidence",
+        ...(res.txHash ? { hash: res.txHash } : {}),
+      });
+
+      qc.invalidateQueries();
+    } catch (e) {
+      setTx({
+        state: "error",
+        message: e instanceof Error ? e.message : "Could not complete the action",
+      });
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-4xl px-5 py-12">
+      <h1 className="text-3xl sm:text-4xl">{verifier.org}</h1>
+      <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+        {verifier.kind} · {verifier.approved ? "approved verifier" : "pending approval"}
+      </p>
+
+      {!verifier.approved && (
+        <p className="mt-6 rounded-md border border-gold/50 bg-gold/10 px-3 py-2 text-xs text-gold-foreground">
+          Your application is under review. You'll be able to verify milestones once
+          MedFund approves your organisation.
+        </p>
+      )}
+
+      <div className="mt-8 rounded-lg border border-border bg-card p-5">
+        <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+          Signing address
+        </p>
+        <p className="mt-1 break-all font-mono text-xs">
+          {verifier.stellar_address ?? "not set"}
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <input
+            className={`${monoInputClass} mt-0 flex-1`}
             placeholder="G…"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
           />
-        </div>
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full rounded-md border border-border px-4 py-2 font-mono text-xs tracking-wide text-foreground transition-colors hover:border-foreground/40 disabled:opacity-60"
-        >
-          {busy ? "Submitting…" : "Submit application"}
-        </button>
-      </form>
-    </section>
-  );
-}
-
-function Dashboard({ account }: { account: VerifierAccount }) {
-  const { fundraisers } = useStore();
-  const requests = fundraisers.filter(
-    (f) => f.verifierAddress === account.address && f.status !== "released",
-  );
-
-  return (
-    <div className="space-y-10">
-      <section className="rounded-lg border border-border bg-card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-xl">{account.org}</h2>
-            <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-              {account.kind} · approved verifier
-            </p>
-          </div>
-          <button
-            onClick={verifierSignOut}
-            className="font-mono text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
-          >
-            sign out
+          <button onClick={saveAddress} className={ghostButtonClass}>
+            Update
           </button>
         </div>
-        <div className="my-4 rule-line" />
-        <AddressManager account={account} />
-      </section>
-
-      <section>
-        <h2 className="text-xl">Pending verification requests</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {requests.length === 0
-            ? "Nothing is waiting on your signature right now."
-            : `${requests.length} case${requests.length > 1 ? "s" : ""} assigned to your address.`}
-        </p>
-        <div className="mt-5 space-y-4">
-          {requests.map((f) => (
-            <RequestCard key={f.id} id={f.id} />
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function AddressManager({ account }: { account: VerifierAccount }) {
-  const [addr, setAddr] = useState(account.address);
-  const [tx, setTx] = useState<Tx>({ state: "idle" });
-
-  const dirty = addr.trim() !== account.address;
-
-  return (
-    <form
-      className="space-y-3"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (!dirty) return;
-        setTx({ state: "pending" });
-        try {
-          const hash = await updateVerifierAddress(account.id, addr.trim());
-          setTx({
-            state: "success",
-            message: "Verifier address updated on escrow contracts",
-            hash,
-          });
-        } catch {
-          setTx({ state: "error", message: "Could not update address" });
-        }
-      }}
-    >
-      <div className="space-y-1.5">
-        <label className={label} htmlFor="verifier-address">
-          Signing address
-        </label>
-        <input
-          id="verifier-address"
-          className={input}
-          value={addr}
-          onChange={(e) => setAddr(e.target.value)}
-        />
-        <p className="font-mono text-[11px] leading-relaxed text-muted-foreground">
-          Escrows naming your institution will require signatures from this
-          address. Changing it re-points every open escrow.
-        </p>
-      </div>
-      <button
-        type="submit"
-        disabled={!dirty || tx.state === "pending"}
-        className="rounded-md bg-primary px-4 py-2 font-mono text-xs tracking-wide text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-      >
-        {tx.state === "pending" ? "Signing…" : "Update address"}
-      </button>
-      <TxFeedback tx={tx} />
-    </form>
-  );
-}
-
-function RequestCard({ id }: { id: string }) {
-  const { fundraisers } = useStore();
-  const f = fundraisers.find((x) => x.id === id);
-  const [tx, setTx] = useState<Tx>({ state: "idle" });
-  if (!f) return null;
-
-  const funded = f.raised >= f.goal;
-
-  return (
-    <div className="rounded-lg border border-border bg-card p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link
-            to="/fundraisers/$id"
-            params={{ id: f.id }}
-            className="text-xl hover:underline underline-offset-4"
-          >
-            {f.patient}
-          </Link>
-          <p className="mt-1 text-sm text-muted-foreground">{f.cause}</p>
-        </div>
-        <StatusBadge status={f.status} />
       </div>
 
-      <div className="my-4 rule-line" />
-
-      <p className="font-mono text-[11px] leading-relaxed text-muted-foreground">
-        MILESTONE · {f.milestone}
-      </p>
-      <div className="mt-3 flex items-center justify-between font-mono text-[11px] text-muted-foreground">
-        <span>
-          ${usd(f.raised)} / ${usd(f.goal)} in escrow
-        </span>
-        <span>{f.location}</span>
+      <h2 className="mt-10 text-2xl">Verification queue</h2>
+      <div className="mt-5 space-y-4">
+        {queue.length === 0 && (
+          <EmptyState
+            title="Nothing waiting"
+            body="Milestones assigned to your organisation will appear here once they're funded."
+          />
+        )}
+        {queue.map((m) => (
+          <div key={m.id} className="rounded-lg border border-border bg-card p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-lg">{m.title}</p>
+              <MilestoneBadge status={m.status as MilestoneStatus} />
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {m.fundraisers?.patient} · ${usd(Number(m.amount))} USDC
+            </p>
+            <p className="mt-2 text-sm">{m.description}</p>
+            <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+              {m.milestone_evidence.length} evidence file
+              {m.milestone_evidence.length === 1 ? "" : "s"} · created{" "}
+              {formatDate(m.created_at)}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={() => decide(m.id, true)}
+                disabled={!verifier.approved || m.status === "pending"}
+                className={buttonClass}
+              >
+                Verify &amp; release
+              </button>
+              <button
+                onClick={() => decide(m.id, false)}
+                disabled={!verifier.approved}
+                className={ghostButtonClass}
+              >
+                Request more evidence
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
-      <div className="mt-2">
-        <Progress raised={f.raised} goal={f.goal} />
-      </div>
 
-      <div className="mt-4 space-y-3">
-        <button
-          disabled={!funded || tx.state === "pending"}
-          onClick={async () => {
-            setTx({ state: "pending" });
-            try {
-              const hash = await verifyMilestone(f.id);
-              setTx({
-                state: "success",
-                message: "Milestone verified — funds released",
-                hash,
-              });
-            } catch {
-              setTx({ state: "error", message: "Verification failed" });
-            }
-          }}
-          className="rounded-md bg-primary px-4 py-2 font-mono text-xs tracking-wide text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {tx.state === "pending"
-            ? "Signing…"
-            : funded
-              ? "Verify milestone & release"
-              : "Awaiting full funding"}
-        </button>
+      <div className="mt-6">
         <TxFeedback tx={tx} />
       </div>
     </div>
