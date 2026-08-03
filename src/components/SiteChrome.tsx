@@ -26,6 +26,14 @@ export function SiteHeader() {
           >
             Start
           </Link>
+          <Link
+            to="/verifier"
+            className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
+            activeProps={{ className: "hidden sm:inline text-sm text-foreground" }}
+          >
+            Verifiers
+          </Link>
+
           <WalletBar />
         </nav>
       </div>
