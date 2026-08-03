@@ -312,3 +312,73 @@ export const formatDate = (iso: string | null) =>
         timeStyle: "short",
       })
     : "—";
+
+/* ---------- verifier onboarding ---------- */
+
+export function verifierSignIn(code: string): VerifierAccount | null {
+  const norm = code.trim().toUpperCase();
+  const acct = state.verifiers.find(
+    (v) => v.approved && v.accessCode.toUpperCase() === norm,
+  );
+  if (!acct) return null;
+  set({ verifierSession: acct.id });
+  return acct;
+}
+
+export function verifierSignOut() {
+  set({ verifierSession: null });
+}
+
+export function currentVerifier(): VerifierAccount | null {
+  return state.verifiers.find((v) => v.id === state.verifierSession) ?? null;
+}
+
+export async function applyAsVerifier(input: {
+  org: string;
+  kind: "Hospital" | "NGO";
+  contact: string;
+  address: string;
+}): Promise<VerifierAccount> {
+  await wait(1200);
+  const id =
+    input.org.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") ||
+    `verifier-${state.verifiers.length + 1}`;
+  const acct: VerifierAccount = {
+    id,
+    org: input.org,
+    kind: input.kind,
+    contact: input.contact,
+    address: input.address,
+    accessCode: `${id.slice(0, 3).toUpperCase()}-PENDING`,
+    approved: false,
+    appliedAt: now(),
+  };
+  set({ verifiers: [...state.verifiers, acct] });
+  return acct;
+}
+
+export async function updateVerifierAddress(
+  id: string,
+  address: string,
+): Promise<string> {
+  await wait(1300);
+  const hash = randHash();
+  const prev = state.verifiers.find((v) => v.id === id);
+  set({
+    verifiers: state.verifiers.map((v) =>
+      v.id === id ? { ...v, address } : v,
+    ),
+    fundraisers: prev
+      ? state.fundraisers.map((f) =>
+          f.verifierAddress === prev.address ? { ...f, verifierAddress: address } : f,
+        )
+      : state.fundraisers,
+  });
+  return hash;
+}
+
+export function requestsForVerifier(address: string) {
+  return state.fundraisers.filter(
+    (f) => f.verifierAddress === address && f.status !== "released",
+  );
+}
