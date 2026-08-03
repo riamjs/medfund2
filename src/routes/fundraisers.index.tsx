@@ -4,7 +4,7 @@ import { fundraisersQuery } from "@/lib/data";
 import { FundraiserCard } from "@/components/FundraiserCard";
 import { EmptyState, Loading } from "@/components/ui-bits";
 
-export const Route = createFileRoute("/fundraisers")({
+export const Route = createFileRoute("/fundraisers/")({
   head: () => ({
     meta: [
       { title: "Open Medical Fundraisers — MedFund" },

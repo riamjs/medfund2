@@ -1,14 +1,23 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { fundraiserQuery } from "@/lib/data";
 import {
-  donate,
-  formatDate,
   explorerUrl,
-  useStore,
+  formatDate,
+  ledgerKindLabel,
   usd,
-  verifyMilestone,
+  type FundraiserStatus,
+  type LedgerKind,
+  type MilestoneStatus,
 } from "@/lib/medfund";
-import { Progress, StatusBadge, TxFeedback, type Tx } from "@/components/ui-bits";
+import {
+  LedgerBadge,
+  Loading,
+  MilestoneBadge,
+  Progress,
+  StatusBadge,
+} from "@/components/ui-bits";
+import { DonateCard } from "@/components/DonateCard";
 
 export const Route = createFileRoute("/fundraisers/$id")({
   head: ({ params }) => ({
@@ -17,7 +26,7 @@ export const Route = createFileRoute("/fundraisers/$id")({
       {
         name: "description",
         content:
-          "Escrow balance, milestone description, named verifier and full on-chain timeline for this MedFund case.",
+          "Escrow balance, milestone schedule, named verifiers and the full on-chain ledger for this MedFund case.",
       },
       { property: "og:title", content: `Fundraiser ${params.id} — MedFund` },
       {
@@ -32,35 +41,19 @@ export const Route = createFileRoute("/fundraisers/$id")({
 
 function Detail() {
   const { id } = Route.useParams();
-  const { fundraisers, wallet } = useStore();
-  const f = fundraisers.find((x) => x.id === id);
-  const [amount, setAmount] = useState("50");
-  const [tx, setTx] = useState<Tx>({ state: "idle" });
+  const { data: f, isLoading } = useQuery(fundraiserQuery(id));
 
+  if (isLoading) {
+    return (
+      <div className="mx-auto max-w-5xl px-5 py-12">
+        <Loading label="Loading fundraiser…" />
+      </div>
+    );
+  }
   if (!f) throw notFound();
 
-  const act = async (fn: () => Promise<string>, message: string) => {
-    setTx({ state: "pending" });
-    try {
-      const hash = await fn();
-      setTx({ state: "success", message, hash });
-    } catch {
-      setTx({ state: "error", message: "Transaction rejected by the network" });
-    }
-  };
-
-  const onDonate = async () => {
-    const value = Number(amount);
-    if (!wallet) {
-      setTx({ state: "error", message: "Connect a wallet to donate" });
-      return;
-    }
-    if (!value || value <= 0) {
-      setTx({ state: "error", message: "Enter an amount greater than zero" });
-      return;
-    }
-    await act(() => donate(f.id, value), `Donated $${usd(value)} USDC to escrow`);
-  };
+  const verifierName =
+    f.milestones.find((m) => m.verifiers)?.verifiers?.org ?? "the named verifier";
 
   return (
     <div className="mx-auto max-w-5xl px-5 py-12">
@@ -73,70 +66,99 @@ function Detail() {
 
       <div className="mt-6 grid gap-10 lg:grid-cols-[1.5fr_1fr]">
         <div>
-          <StatusBadge status={f.status} />
+          <StatusBadge status={f.status as FundraiserStatus} />
           <h1 className="mt-4 text-3xl sm:text-4xl">{f.patient}</h1>
           <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
             {f.location}
           </p>
           <p className="mt-5 max-w-2xl leading-relaxed text-muted-foreground">
-            {f.summary}
+            {f.summary || f.cause}
           </p>
 
           <div className="mt-8 rounded-lg border border-border bg-card p-5">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
                   Raised
                 </p>
-                <p className="mt-1 font-mono text-2xl">${usd(f.raised)}</p>
+                <p className="mt-1 font-mono text-2xl">${usd(Number(f.raised_amount))}</p>
+              </div>
+              <div>
+                <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                  Released
+                </p>
+                <p className="mt-1 font-mono text-2xl">
+                  ${usd(Number(f.released_amount))}
+                </p>
               </div>
               <div>
                 <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
                   Goal
                 </p>
-                <p className="mt-1 font-mono text-2xl">${usd(f.goal)}</p>
+                <p className="mt-1 font-mono text-2xl">${usd(Number(f.goal_amount))}</p>
               </div>
             </div>
             <div className="mt-4">
-              <Progress raised={f.raised} goal={f.goal} />
+              <Progress
+                raised={Number(f.raised_amount)}
+                goal={Number(f.goal_amount)}
+              />
             </div>
-            <div className="my-5 rule-line" />
-            <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-              Milestone
-            </p>
-            <p className="mt-1 text-sm">{f.milestone}</p>
-            <p className="mt-4 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-              Verifier
-            </p>
-            <p className="mt-1 text-sm">{f.verifier}</p>
-            <p className="font-mono text-[11px] break-all text-muted-foreground">
-              {f.verifierAddress}
-            </p>
           </div>
 
-          <h2 className="mt-10 text-2xl">Timeline</h2>
-          <ol className="mt-5 border-l border-border pl-5">
-            {f.timeline.map((t) => (
-              <li key={t.label} className="relative pb-6 last:pb-0">
-                <span
-                  className={`absolute -left-[26px] top-1.5 h-2.5 w-2.5 rounded-full border ${
-                    t.at
-                      ? "border-primary bg-primary"
-                      : "border-border bg-background"
-                  }`}
-                />
-                <p className="text-sm text-foreground">{t.label}</p>
-                <p className="font-mono text-[11px] text-muted-foreground">
-                  {formatDate(t.at)}
-                </p>
-                {t.at && t.tx && (
+          <h2 className="mt-10 text-2xl">Milestones</h2>
+          <div className="mt-5 space-y-4">
+            {f.milestones.map((m) => (
+              <div key={m.id} className="rounded-lg border border-border bg-card p-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-lg">{m.title}</p>
+                  <MilestoneBadge status={m.status as MilestoneStatus} />
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">{m.description}</p>
+                <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 font-mono text-[11px] text-muted-foreground">
+                  <span>${usd(Number(m.amount))} USDC</span>
+                  <span>Verifier: {m.verifiers?.org ?? "unassigned"}</span>
+                  {m.released_at && <span>Released {formatDate(m.released_at)}</span>}
+                </div>
+                {m.verifier_note && (
+                  <p className="mt-2 text-xs italic text-muted-foreground">
+                    “{m.verifier_note}”
+                  </p>
+                )}
+                {m.release_tx && (
                   <a
-                    href={explorerUrl(t.tx)}
+                    href={explorerUrl(m.release_tx)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-block font-mono text-[11px] text-primary underline underline-offset-2"
+                  >
+                    release {m.release_tx.slice(0, 16)}… ↗
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <h2 className="mt-10 text-2xl">On-chain ledger</h2>
+          <ol className="mt-5 space-y-4 border-l border-border pl-5">
+            {f.ledger_events.map((e) => (
+              <li key={e.id} className="relative">
+                <span className="absolute -left-[26px] top-2 h-2.5 w-2.5 rounded-full border border-primary bg-primary" />
+                <LedgerBadge kind={e.kind as LedgerKind} />
+                <p className="mt-1.5 text-sm">
+                  {e.detail || ledgerKindLabel[e.kind as LedgerKind]}
+                </p>
+                <p className="font-mono text-[11px] text-muted-foreground">
+                  {formatDate(e.created_at)}
+                </p>
+                {e.tx_hash && (
+                  <a
+                    href={explorerUrl(e.tx_hash)}
                     target="_blank"
                     rel="noreferrer"
                     className="font-mono text-[11px] text-primary underline underline-offset-2"
                   >
-                    {t.tx.slice(0, 16)}… ↗
+                    {e.tx_hash.slice(0, 16)}… ↗
                   </a>
                 )}
               </li>
@@ -144,58 +166,11 @@ function Detail() {
           </ol>
         </div>
 
-        <aside className="h-fit rounded-lg border border-border bg-card p-5 lg:sticky lg:top-24">
-          <h2 className="text-xl">Donate USDC</h2>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Your donation is locked in escrow until {f.verifier} verifies the
-            milestone.
-          </p>
-
-          <label className="mt-5 block font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-            Amount (USDC)
-          </label>
-          <input
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            inputMode="decimal"
-            className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm outline-none focus:border-ring"
-          />
-          <div className="mt-2 flex gap-2">
-            {[25, 50, 100, 250].map((v) => (
-              <button
-                key={v}
-                onClick={() => setAmount(String(v))}
-                className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground hover:bg-secondary"
-              >
-                ${v}
-              </button>
-            ))}
-          </div>
-
-          <button
-            onClick={onDonate}
-            disabled={tx.state === "pending" || f.status === "released"}
-            className="mt-4 w-full rounded-md bg-primary px-4 py-2.5 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
-          >
-            {f.status === "released" ? "Fundraiser complete" : "Donate to escrow"}
-          </button>
-
-          {f.status === "pending" && (
-            <button
-              onClick={() =>
-                act(() => verifyMilestone(f.id), "Milestone verified — funds released")
-              }
-              disabled={tx.state === "pending"}
-              className="mt-2 w-full rounded-md border border-gold/60 bg-gold/15 px-4 py-2.5 text-sm text-gold-foreground hover:bg-gold/25 disabled:opacity-50"
-            >
-              Verify milestone & release (verifier only)
-            </button>
-          )}
-
-          <div className="mt-4">
-            <TxFeedback tx={tx} />
-          </div>
-        </aside>
+        <DonateCard
+          slug={f.slug}
+          verifierName={verifierName}
+          disabled={f.status === "completed" || f.status === "cancelled"}
+        />
       </div>
     </div>
   );
