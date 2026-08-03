@@ -131,9 +131,63 @@ const initial: Fundraiser[] = [
   },
 ];
 
-type State = { fundraisers: Fundraiser[]; wallet: Wallet };
+export type VerifierAccount = {
+  id: string;
+  org: string;
+  kind: "Hospital" | "NGO";
+  contact: string;
+  address: string;
+  accessCode: string;
+  approved: boolean;
+  appliedAt: string;
+};
 
-let state: State = { fundraisers: initial, wallet: null };
+const verifierSeed: VerifierAccount[] = [
+  {
+    id: "chong-hua",
+    org: "Chong Hua Hospital — Billing Office",
+    kind: "Hospital",
+    contact: "billing@chonghua.example.ph",
+    address: "GCHONGHUA7Q2XK4M9PJTLVZ8RD3NWFY6BSAE1CQXU2MKD5RTP",
+    accessCode: "CHH-2026",
+    approved: true,
+    appliedAt: "2026-01-12T08:00:00Z",
+  },
+  {
+    id: "kythe",
+    org: "Kythe Foundation (NGO)",
+    kind: "NGO",
+    contact: "verify@kythe.example.ph",
+    address: "GKYTHE9PL3MX2QVD7RNB4TSJ8WCFA6EUHO5KZI1YRXM2DPTV",
+    accessCode: "KYT-2026",
+    approved: true,
+    appliedAt: "2026-02-04T08:00:00Z",
+  },
+  {
+    id: "spmc",
+    org: "Southern Philippines Medical Center",
+    kind: "Hospital",
+    contact: "records@spmc.example.ph",
+    address: "GSPMC4KD8LQ2ZX7VNRJ9TYE3WB6MFAH5UCPO1DSKR2XVL9TN",
+    accessCode: "SPM-2026",
+    approved: true,
+    appliedAt: "2026-02-20T08:00:00Z",
+  },
+];
+
+type State = {
+  fundraisers: Fundraiser[];
+  wallet: Wallet;
+  verifiers: VerifierAccount[];
+  verifierSession: string | null;
+};
+
+let state: State = {
+  fundraisers: initial,
+  wallet: null,
+  verifiers: verifierSeed,
+  verifierSession: null,
+};
 const listeners = new Set<() => void>();
 
 const set = (next: Partial<State>) => {
