@@ -1,6 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useStore, usd } from "@/lib/medfund";
-import { Progress, StatusBadge } from "@/components/ui-bits";
+import { useQuery } from "@tanstack/react-query";
+import { fundraisersQuery, ledgerQuery } from "@/lib/data";
+import { usd } from "@/lib/medfund";
+import { FundraiserCard } from "@/components/FundraiserCard";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -49,11 +52,30 @@ const steps = [
 ];
 
 function Landing() {
-  const { fundraisers } = useStore();
-  const featured = fundraisers.slice(0, 2);
+  const { data: fundraisers = [] } = useQuery(fundraisersQuery);
+  const { data: ledger = [] } = useQuery(ledgerQuery);
+  const featured = fundraisers.filter((f) => f.status !== "cancelled").slice(0, 2);
+
+  const escrowed = fundraisers.reduce(
+    (sum, f) => sum + Number(f.raised_amount) - Number(f.released_amount),
+    0,
+  );
+  const verified = ledger.filter((e) => e.kind === "verified").length;
+  const releases = ledger.filter((e) => e.kind === "released").length;
+  const verifiers = new Set(
+    fundraisers.flatMap((f) => f.milestones.map((m) => m.verifier_id).filter(Boolean)),
+  ).size;
+
+  const stats: [string, string][] = [
+    [`$${usd(escrowed)}`, "Held in escrow"],
+    [String(verified), "Milestones verified"],
+    [String(releases), "On-chain releases"],
+    [String(verifiers), "Partner verifiers"],
+  ];
 
   return (
     <div className="mx-auto max-w-5xl px-5">
+
       <section className="border-b border-border py-16 sm:py-24">
         <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
           Ledger no. 001 · Philippines
@@ -82,12 +104,8 @@ function Landing() {
           </Link>
         </div>
         <dl className="mt-12 grid grid-cols-2 gap-6 sm:grid-cols-4">
-          {[
-            ["$47,320", "Held in escrow"],
-            ["112", "Milestones verified"],
-            ["0", "Unverified releases"],
-            ["18", "Partner verifiers"],
-          ].map(([v, l]) => (
+          {stats.map(([v, l]) => (
+
             <div key={l}>
               <dt className="font-mono text-xl text-foreground">{v}</dt>
               <dd className="mt-1 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -127,23 +145,9 @@ function Landing() {
         </div>
         <div className="mt-8 grid gap-5 sm:grid-cols-2">
           {featured.map((f) => (
-            <Link
-              key={f.id}
-              to="/fundraisers/$id"
-              params={{ id: f.id }}
-              className="block rounded-lg border border-border bg-card p-5 transition-colors hover:border-foreground/25"
-            >
-              <StatusBadge status={f.status} />
-              <h3 className="mt-3 text-xl">{f.patient}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{f.cause}</p>
-              <div className="mt-5">
-                <Progress raised={f.raised} goal={f.goal} />
-                <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-                  ${usd(f.raised)} raised of ${usd(f.goal)} USDC
-                </p>
-              </div>
-            </Link>
+            <FundraiserCard key={f.id} f={f} />
           ))}
+
         </div>
       </section>
     </div>

@@ -1,40 +1,62 @@
-import { useState } from "react";
-import { connectWallet, disconnectWallet, shortAddr, useStore } from "@/lib/medfund";
+import { useEffect } from "react";
+import { shortAddr } from "@/lib/medfund";
+import {
+  connectWallet,
+  disconnectWallet,
+  refreshBalances,
+  useWallet,
+} from "@/lib/wallet";
 
 export function WalletBar() {
-  const { wallet } = useStore();
-  const [busy, setBusy] = useState(false);
+  const wallet = useWallet();
 
-  if (!wallet) {
+  useEffect(() => {
+    if (!wallet.address) return;
+    const id = setInterval(() => refreshBalances(wallet.address!), 20000);
+    return () => clearInterval(id);
+  }, [wallet.address]);
+
+  if (!wallet.address)
     return (
-      <button
-        onClick={async () => {
-          setBusy(true);
-          await connectWallet();
-          setBusy(false);
-        }}
-        disabled={busy}
-        className="rounded-md bg-primary px-4 py-2 font-mono text-xs tracking-wide text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-      >
-        {busy ? "Connecting…" : "Connect Wallet"}
-      </button>
+      <div className="flex items-center gap-2">
+        {wallet.error && (
+          <span className="hidden max-w-[220px] truncate font-mono text-[10px] text-destructive sm:inline">
+            {wallet.error}
+          </span>
+        )}
+        <button
+          onClick={() => connectWallet()}
+          disabled={wallet.connecting}
+          className="rounded-md bg-primary px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-primary-foreground hover:opacity-90 disabled:opacity-50"
+        >
+          {wallet.connecting ? "Connecting…" : "Connect wallet"}
+        </button>
+      </div>
     );
-  }
+
+  const wrongNetwork =
+    wallet.network && !wallet.network.toUpperCase().includes("TEST");
 
   return (
-    <div className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-1.5">
-      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-      <span className="font-mono text-xs text-foreground">
-        {shortAddr(wallet.address)}
-      </span>
-      <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
-        {wallet.balance.toFixed(2)} XLM
-      </span>
+    <div className="flex items-center gap-2">
+      {wrongNetwork && (
+        <span className="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 font-mono text-[10px] uppercase text-destructive">
+          Switch Freighter to Testnet
+        </span>
+      )}
+      <div className="hidden text-right sm:block">
+        <p className="font-mono text-[11px] text-foreground">
+          {shortAddr(wallet.address)}
+        </p>
+        <p className="font-mono text-[10px] text-muted-foreground">
+          {wallet.usdc ? `${wallet.usdc} USDC` : "no USDC trustline"}
+        </p>
+      </div>
       <button
         onClick={disconnectWallet}
-        className="font-mono text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        className="rounded-md border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground hover:bg-secondary"
       >
-        exit
+        Disconnect
       </button>
     </div>
   );
