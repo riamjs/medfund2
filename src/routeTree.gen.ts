@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as VerifierRouteImport } from './routes/verifier'
 import { Route as FundraisersIndexRouteImport } from './routes/fundraisers.index'
@@ -18,6 +19,11 @@ import { Route as FundraisersIdRouteImport } from './routes/fundraisers.$id'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CreateRoute = CreateRouteImport.update({
@@ -43,6 +49,7 @@ const FundraisersIdRoute = FundraisersIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
   '/verifier': typeof VerifierRoute
   '/fundraisers/$id': typeof FundraisersIdRoute
@@ -50,6 +57,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
   '/verifier': typeof VerifierRoute
   '/fundraisers/$id': typeof FundraisersIdRoute
@@ -58,6 +66,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
   '/verifier': typeof VerifierRoute
   '/fundraisers/$id': typeof FundraisersIdRoute
@@ -66,12 +75,24 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/create' | '/verifier' | '/fundraisers/$id' | '/fundraisers/'
+    | '/'
+    | '/auth'
+    | '/create'
+    | '/verifier'
+    | '/fundraisers/$id'
+    | '/fundraisers/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/create' | '/verifier' | '/fundraisers/$id' | '/fundraisers'
+  to:
+    | '/'
+    | '/auth'
+    | '/create'
+    | '/verifier'
+    | '/fundraisers/$id'
+    | '/fundraisers'
   id:
     | '__root__'
     | '/'
+    | '/auth'
     | '/create'
     | '/verifier'
     | '/fundraisers/$id'
@@ -80,6 +101,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRoute
   CreateRoute: typeof CreateRoute
   VerifierRoute: typeof VerifierRoute
   FundraisersIdRoute: typeof FundraisersIdRoute
@@ -93,6 +115,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/create': {
@@ -128,6 +157,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRoute,
   CreateRoute: CreateRoute,
   VerifierRoute: VerifierRoute,
   FundraisersIdRoute: FundraisersIdRoute,

@@ -6,11 +6,10 @@ import { supabase } from "@/integrations/supabase/client";
 
 const nav = [
   { to: "/fundraisers", label: "Fundraisers" },
-  { to: "/ledger", label: "Ledger" },
-  { to: "/dashboard", label: "Dashboard" },
   { to: "/verifier", label: "Verifiers" },
   { to: "/create", label: "Start" },
 ] as const;
+
 
 export function SiteChrome({ children }: { children: ReactNode }) {
   const { user } = useAuth();
