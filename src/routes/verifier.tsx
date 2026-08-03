@@ -169,8 +169,9 @@ function VerifierPage() {
       setTx({
         state: "success",
         message: approve ? "Milestone verified and paid out" : "Sent back for evidence",
-        hash: res.txHash ?? undefined,
+        ...(res.txHash ? { hash: res.txHash } : {}),
       });
+
       qc.invalidateQueries();
     } catch (e) {
       setTx({
