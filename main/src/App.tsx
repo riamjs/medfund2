@@ -5,6 +5,7 @@ import Browse from "./pages/Browse.tsx"
 import Detail from "./pages/Detail.tsx"
 import Create from "./pages/Create.tsx"
 
+
 type View = "landing" | "browse" | "detail" | "create"
 
 const MOCK_ADDRESS = "GCPH7K2MJNXFAKEADDRESSFORDEMONSTRATION42XY"

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import logo from "../imports/medfundlogo.png"
 
 interface WalletBarProps {
   walletAddress: string | null
@@ -22,6 +23,8 @@ export default function WalletBar({
   const short = walletAddress
     ? `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`
     : null
+
+    
 
   return (
     <header
@@ -266,3 +269,5 @@ export default function WalletBar({
     </header>
   )
 }
+
+

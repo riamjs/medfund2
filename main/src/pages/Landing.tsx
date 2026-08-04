@@ -1,4 +1,4 @@
-import heroIllustration from '../imports/ewan.jpg'
+import heroIllustration from '../imports/medfundlogo.png'
 
 interface LandingProps {
   onNavigate: (view: string) => void
