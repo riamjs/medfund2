@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { fundraisers, type FundraiserStatus } from '../data/fundraisers.ts'
+import { useFundraisers, type FundraiserStatus } from '@/lib/adapt'
 
 interface BrowseProps {
   onNavigate: (view: string, id?: string) => void
@@ -26,6 +26,7 @@ const FILTERS: { label: string; value: FundraiserStatus | 'all' }[] = [
 
 export default function Browse({ onNavigate }: BrowseProps) {
   const [filter, setFilter] = useState<FundraiserStatus | 'all'>('all')
+  const fundraisers = useFundraisers()
 
   const filtered = filter === 'all' ? fundraisers : fundraisers.filter(f => f.status === filter)
 
@@ -111,8 +112,8 @@ export default function Browse({ onNavigate }: BrowseProps) {
                 height: '6px',
                 backgroundColor:
                   f.status === 'verified_released' ? '#3CAB6A'
-                  : f.status === 'milestone_pending' ? '#D4920A'
-                  : 'var(--primary)',
+                    : f.status === 'milestone_pending' ? '#D4920A'
+                      : 'var(--primary)',
               }} />
 
               <div style={{ padding: '22px', flex: 1, display: 'flex', flexDirection: 'column' }}>
