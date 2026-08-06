@@ -1,38 +1,39 @@
 # MedFund 💊💰
 
-A transparent healthcare fundraising platform where donations are held in
-Stellar escrow and released only when a hospital or NGO confirms a
-treatment milestone.
+A transparent healthcare fundraising platform where donations are held in escrow and released only when a hospital or NGO confirms a treatment milestone.
 
 ## Problem
 
-A cancer patient in Quezon City faces ₱150,000 in hospital bills, but
-donors hesitate to give because existing fundraising platforms don't show
-how or when the money is actually spent — leaving the patient at risk of
-delayed treatment.
+A cancer patient in Quezon City faces ₱150,000 in hospital bills, but donors hesitate to give because existing fundraising platforms don't show how or when the money is actually spent — leaving the patient at risk of delayed treatment.
 
 ## Solution
 
-MedFund lets patients launch verified fundraisers where donations sit in
-a Soroban smart-contract escrow. Funds are only released to the patient
-once a hospital or NGO verifies that a treatment milestone (e.g.,
-"surgery scheduled") has been reached. Every donation, verification, and
-release is visible on-chain, so donors can see exactly where their money
-goes and when.
-
+MedFund lets patients launch verified fundraisers where donations sit in a smart-contract escrow. Funds are only released to the patient once a hospital or NGO verifies that a treatment milestone (e.g., "surgery scheduled") has been reached. Every donation, verification, and release is visible on-chain, so donors can see exactly where their money goes and when.
 
 ## Vision and Purpose
 
-Metro Manila and provincial hospital patients routinely face partial or
-delayed coverage from PhilHealth and NGOs. MedFund gives patients a
-credible way to raise emergency funds by removing the single biggest
-objection donors have: not knowing where the money goes. For hospitals
-and NGOs (Caritas Manila, Kythe Foundation, Philippine Red Cross), it
-offers faster, verifiable disbursement without waiting on reimbursement
-cycles. For overseas Filipino donors especially, it turns a leap of faith
-into a transaction they can audit.
+Metro Manila and provincial hospital patients routinely face partial or delayed coverage from PhilHealth and NGOs. MedFund gives patients a credible way to raise emergency funds by removing the single biggest objection donors have: not knowing where the money goes. For hospitals and NGOs (Caritas Manila, Kythe Foundation, Philippine Red Cross), it offers faster, verifiable disbursement without waiting on reimbursement cycles. For overseas Filipino donors especially, it turns a leap of faith into a transaction they can audit.
 
-## Prerequisites
+## Web Application
+
+The front-end is built with [Lovable](https://lovable.dev) and includes:
+
+- **Landing page** — explains the problem and solution with a "How it works" 4-step visual: Create → Donate → Verify → Release
+- **Wallet connect bar** — shows connected wallet address and XLM balance
+- **Fundraiser dashboard** — cards displaying patient name, milestone, progress bar (raised vs goal), and status badge
+- **Fundraiser detail page** — goal, amount raised, milestone description, verifier info, transaction timeline, and donation form
+- **Create fundraiser form** — enter verifier address, milestone description, and goal amount
+- **Transaction status feedback** — shows pending/success/error states with links to view transactions on stellar.expert
+
+**Design direction:** warm, trustworthy, non-corporate aesthetic with serif headings, monospace for technical details, muted earthy palette (cream, deep green, gold accents), generous whitespace, and mobile-friendly layout.
+
+**Live app**: https://medfundph.lovable.app
+
+## Smart Contract
+
+The escrow logic runs on Soroban (Stellar's smart-contract platform).
+
+### Prerequisites
 
 - [Rust](https://www.rust-lang.org/tools/install) (stable toolchain)
 - `wasm32v1-none` target: `rustup target add wasm32v1-none`
@@ -46,7 +47,7 @@ into a transaction they can audit.
   from the [GitHub releases page](https://github.com/stellar/stellar-cli/releases)
   instead.
 
-## How to Build
+### How to Build
 
 ```bash
 stellar contract build
@@ -55,7 +56,7 @@ stellar contract build
 The compiled Wasm binary will be output to
 `target/wasm32v1-none/release/medfund.wasm`.
 
-## How to Test
+### How to Test
 
 ```bash
 cargo test
@@ -65,7 +66,7 @@ Runs the 5-test suite in `src/test.rs`, covering the happy path,
 authorization checks, state verification, double-release prevention, and
 input validation.
 
-## How to Deploy to Testnet
+### How to Deploy to Testnet
 
 ```bash
 stellar contract deploy \
@@ -81,7 +82,7 @@ This prints the deployed contract ID, referred to below as `<CONTRACT_ID>`.
 > Testnet ledgers reset periodically — if calls against this ID fail with
 > a "contract not found" error, redeploy and update this line.
 
-## Sample CLI Invocation
+### Sample CLI Invocation
 
 Create a fundraiser (dummy arguments):
 
@@ -112,3 +113,25 @@ stellar contract invoke \
   --fundraiser_id 0 \
   --amount 150000
 ```
+
+## Development
+
+### Web App (Front-end)
+
+You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+
+```sh
+git clone <this-repository-url>
+cd <repository-name>
+npm i
+npm run dev
+```
+
+Continue developing in the [Lovable editor](https://lovable.dev/projects/74dd5bc8-dffb-4377-ba07-f1d299b0c75b):
+- **Ship faster**: describe what you want to build and Lovable handles the code.
+- **Stay in sync**: every change made in Lovable is committed straight to this repository.
+- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable.
+
+### Smart Contract (Soroban)
+
+See Prerequisites and Build sections above.
