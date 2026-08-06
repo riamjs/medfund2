@@ -1,12 +1,20 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
-@import 'tailwindcss';
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
@@ -15,40 +23,46 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
+  --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: var(--radius);
-  --radius-lg: calc(var(--radius) + 8px);
   --font-sans: var(--font-body);
   --font-serif: var(--font-heading);
   --font-mono: var(--font-mono-face);
 }
 
 :root {
-  --background: #FCCFA4;
-  --foreground: #1A1410;
-  --card: #FDE5C8;
-  --card-foreground: #1A1410;
-  --primary: #E8527A;
+  --background: #fccfa4;
+  --foreground: #1a1410;
+  --card: #fde5c8;
+  --card-foreground: #1a1410;
+  --popover: #fde5c8;
+  --popover-foreground: #1a1410;
+  --primary: #e8527a;
   --primary-foreground: #ffffff;
-  --secondary: #F9B87A;
-  --secondary-foreground: #1A1410;
-  --muted: #F5C89A;
-  --muted-foreground: #7A5C3A;
-  --accent: #E8527A;
+  --secondary: #f9b87a;
+  --secondary-foreground: #1a1410;
+  --muted: #f5c89a;
+  --muted-foreground: #7a5c3a;
+  --accent: #e8527a;
   --accent-foreground: #ffffff;
-  --border: #ECA96A;
-  --ring: #E8527A;
-  --radius: 100px;
+  --destructive: #b3261e;
+  --destructive-foreground: #ffffff;
+  --border: #eca96a;
+  --input: #eca96a;
+  --ring: #e8527a;
+  --radius: 1rem;
 
-  --font-heading: 'Nunito', system-ui, sans-serif;
-  --font-body: 'Nunito', system-ui, sans-serif;
-  --font-mono-face: 'JetBrains Mono', 'Courier New', monospace;
+  --font-heading: "Nunito", system-ui, sans-serif;
+  --font-body: "Nunito", system-ui, sans-serif;
+  --font-mono-face: "JetBrains Mono", "Courier New", monospace;
 }
 
 * {
   box-sizing: border-box;
+  border-color: var(--border);
 }
 
 html {
@@ -66,19 +80,27 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
 code,
-.mono {
+.mono,
+.font-mono {
   font-family: var(--font-mono-face);
 }
 
 ::-webkit-scrollbar {
   width: 6px;
 }
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
   background-color: var(--border);
   border-radius: 3px;

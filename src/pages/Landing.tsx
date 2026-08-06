@@ -1,4 +1,4 @@
-import heroIllustration from '../imports/medfundlogo.png'
+import heroIllustration from '@/assets/hero-giving.png'
 
 interface LandingProps {
   onNavigate: (view: string) => void
@@ -131,7 +131,7 @@ export default function Landing({ onNavigate }: LandingProps) {
 
           {/* Carousel dots */}
           <div style={{ display: 'flex', gap: '8px', marginTop: '48px', alignItems: 'center' }}>
-            {[0, 1, 2, 3, 4].map(i => (
+            {[0,1,2,3,4].map(i => (
               <div key={i} style={{
                 width: i === 1 ? '24px' : '10px',
                 height: '10px',
@@ -316,7 +316,7 @@ export default function Landing({ onNavigate }: LandingProps) {
           gap: '64px',
           alignItems: 'center',
         }}
-          className="trust-grid"
+        className="trust-grid"
         >
           <div>
             <p style={{

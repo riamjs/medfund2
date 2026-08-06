@@ -112,8 +112,8 @@ export default function Browse({ onNavigate }: BrowseProps) {
                 height: '6px',
                 backgroundColor:
                   f.status === 'verified_released' ? '#3CAB6A'
-                    : f.status === 'milestone_pending' ? '#D4920A'
-                      : 'var(--primary)',
+                  : f.status === 'milestone_pending' ? '#D4920A'
+                  : 'var(--primary)',
               }} />
 
               <div style={{ padding: '22px', flex: 1, display: 'flex', flexDirection: 'column' }}>

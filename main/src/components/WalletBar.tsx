@@ -24,7 +24,7 @@ export default function WalletBar({
     ? `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`
     : null
 
-    
+
 
   return (
     <header
