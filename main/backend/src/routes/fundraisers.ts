@@ -25,8 +25,8 @@ router.get("/:id", async (req, res) => {
 
 
 router.post("/", async (req, res) => {
+  console.log("POST /fundraisers hit, id:", req.body.id, "at", new Date().toISOString());
   const { txHash, id, contractId, title, description, hospitalName, targetAmount, imageUrl, patientId } = req.body;
-
   try {
     await verifyTransactionOnChain(txHash);
   } catch (err: any) {
