@@ -31,16 +31,29 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 
 function createSupabaseAdminClient() {
   const SUPABASE_URL = process.env['SUPABASE_URL'];
-  const SUPABASE_SERVICE_ROLE_KEY = process.env['SUPABASE_SERVICE_ROLE_KEY'];
+  // Prefer the secret key (sb_secret_... / service_role) for full admin access (bypasses RLS).
+  // Fall back to the publishable key for local development — note: RLS will still apply.
+  const SUPABASE_SERVICE_ROLE_KEY =
+    process.env['SUPABASE_SERVICE_ROLE_KEY'] ||
+    process.env['SUPABASE_SECRET_KEY'] ||
+    process.env['SUPABASE_PUBLISHABLE_KEY'];
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     const missing = [
       ...(!SUPABASE_URL ? ['SUPABASE_URL'] : []),
-      ...(!SUPABASE_SERVICE_ROLE_KEY ? ['SUPABASE_SERVICE_ROLE_KEY'] : []),
+      ...(!SUPABASE_SERVICE_ROLE_KEY ? ['SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_PUBLISHABLE_KEY)'] : []),
     ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Connect Supabase in Lovable Cloud.`;
+    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Add them to your .env file.`;
     console.error(`[Supabase] ${message}`);
     throw new Error(message);
+  }
+
+  if (!process.env['SUPABASE_SERVICE_ROLE_KEY'] && !process.env['SUPABASE_SECRET_KEY']) {
+    console.warn(
+      '[Supabase] SUPABASE_SERVICE_ROLE_KEY is not set — falling back to publishable key. ' +
+      'RLS policies will still apply; admin operations may fail. ' +
+      'Add your sb_secret_... key to .env for full admin access.'
+    );
   }
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
