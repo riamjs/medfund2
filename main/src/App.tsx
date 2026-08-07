@@ -1,15 +1,24 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import WalletBar from "./components/WalletBar.tsx"
 import Landing from "./pages/Landing.tsx"
 import Browse from "./pages/Browse.tsx"
 import Detail from "./pages/Detail.tsx"
 import Create from "./pages/Create.tsx"
+import Auth from "./pages/Auth.tsx"
+import { isConnected, requestAccess, getNetwork } from "@stellar/freighter-api"
+import { Horizon } from "@stellar/stellar-sdk"
+import { supabase } from "./integrations/supabase/client.ts"
+
+type View = "landing" | "browse" | "detail" | "create" | "auth"
 
 
-type View = "landing" | "browse" | "detail" | "create"
+const horizon = new Horizon.Server("https://horizon-testnet.stellar.org")
 
-const MOCK_ADDRESS = "GCPH7K2MJNXFAKEADDRESSFORDEMONSTRATION42XY"
-const MOCK_BALANCE = "842.50"
+async function fetchXlmBalance(publicKey: string): Promise<string> {
+  const account = await horizon.loadAccount(publicKey)
+  const native = account.balances.find((b) => b.asset_type === "native")
+  return native?.balance ?? "0"
+}
 
 export default function App() {
   const [view, setView] = useState<View>("landing")
@@ -17,6 +26,15 @@ export default function App() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [balance, setBalance] = useState<string | null>(null)
   const [connectingWallet, setConnectingWallet] = useState(false)
+  const [session, setSession] = useState<any>(null)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+    return () => listener.subscription.unsubscribe()
+  }, [])
 
   const handleNavigate = (v: string, id?: string) => {
     setView(v as View)
@@ -24,13 +42,35 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     setConnectingWallet(true)
-    setTimeout(() => {
-      setWalletAddress(MOCK_ADDRESS)
-      setBalance(MOCK_BALANCE)
+    try {
+      const { isConnected: installed } = await isConnected()
+      if (!installed) {
+        window.open("https://www.freighter.app/", "_blank")
+        return
+      }
+
+      const { network } = await getNetwork()
+      if (network !== "TESTNET") {
+        alert("Please switch Freighter to Testnet to use MedFund.")
+        return
+      }
+
+      const { address, error } = await requestAccess()
+      if (error || !address) {
+        console.error("Freighter connection failed:", error)
+        return
+      }
+
+      setWalletAddress(address)
+      const bal = await fetchXlmBalance(address)
+      setBalance(bal)
+    } catch (err) {
+      console.error("Wallet connect error:", err)
+    } finally {
       setConnectingWallet(false)
-    }, 1200)
+    }
   }
 
   const handleDisconnect = () => {
@@ -128,6 +168,7 @@ export default function App() {
             onNavigate={handleNavigate}
           />
         )}
+        {view === "auth" && <Auth onNavigate={handleNavigate} />}
       </div>
 
       {/* Footer */}
