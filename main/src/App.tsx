@@ -14,10 +14,18 @@ type View = "landing" | "browse" | "detail" | "create" | "auth"
 
 const horizon = new Horizon.Server("https://horizon-testnet.stellar.org")
 
-async function fetchXlmBalance(publicKey: string): Promise<string> {
+const USDC_ISSUER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+
+async function fetchUsdcBalance(publicKey: string): Promise<string> {
   const account = await horizon.loadAccount(publicKey)
-  const native = account.balances.find((b) => b.asset_type === "native")
-  return native?.balance ?? "0"
+  const usdc = account.balances.find(
+    (b) =>
+      b.asset_type !== "native" &&
+      "asset_code" in b &&
+      b.asset_code === "USDC" &&
+      b.asset_issuer === USDC_ISSUER
+  )
+  return usdc?.balance ?? "0"
 }
 
 export default function App() {
@@ -64,7 +72,7 @@ export default function App() {
       }
 
       setWalletAddress(address)
-      const bal = await fetchXlmBalance(address)
+      const bal = await fetchUsdcBalance(address)
       setBalance(bal)
     } catch (err) {
       console.error("Wallet connect error:", err)
