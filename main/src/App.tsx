@@ -7,6 +7,7 @@ import Create from "./pages/Create.tsx"
 import Auth from "./pages/Auth.tsx"
 import DonationsTracker from "./pages/DonationsTracker.tsx"
 import ProfileSettings from "./pages/ProfileSettings.tsx"
+import Profile from "./pages/Profile.tsx"
 import { isConnected, requestAccess, getNetwork } from "@stellar/freighter-api"
 import { Horizon } from "@stellar/stellar-sdk"
 import { supabase } from "./integrations/supabase/client.ts"
@@ -167,28 +168,28 @@ export default function App() {
         onSignOut={handleSignOut}
       />
 
-      <div style={{ flex: 1 }}>
-        {view === "landing" && <Landing onNavigate={handleNavigate} />}
-        {view === "browse" && <Browse onNavigate={handleNavigate} />}
-        {view === "detail" && detailId && (
-          <Detail
-            fundraiserId={detailId}
-            walletAddress={walletAddress}
-            onNavigate={handleNavigate}
-            onConnectWallet={handleConnect}
-          />
-        )}
-        {view === "create" && (
-          <Create
-            walletAddress={walletAddress}
-            onConnectWallet={handleConnect}
-            onNavigate={handleNavigate}
-          />
-        )}
-        {view === "auth" && <Auth onNavigate={handleNavigate} />}
-        {view === "donations" && <DonationsTracker onNavigate={handleNavigate} />}
-        {view === "profile" && <ProfileSettings onNavigate={handleNavigate} />}
-      </div>
+          <div style={{ flex: 1 }}>
+      {view === "landing" && <Landing onNavigate={handleNavigate} />}
+      {view === "browse" && <Browse onNavigate={handleNavigate} />}
+      {view === "detail" && detailId && (
+        <Detail
+          fundraiserId={detailId}
+          walletAddress={walletAddress}
+          onNavigate={handleNavigate}
+          onConnectWallet={handleConnect}
+        />
+      )}
+      {view === "create" && (
+        <Create
+          walletAddress={walletAddress}
+          onConnectWallet={handleConnect}
+          onNavigate={handleNavigate}
+        />
+      )}
+      {view === "auth" && <Auth onNavigate={handleNavigate} />}
+      {view === "donations" && <DonationsTracker onNavigate={handleNavigate} />}
+      {view === "profile" && <Profile onNavigate={handleNavigate} />}
+    </div>
 
       {/* Footer */}
       <footer

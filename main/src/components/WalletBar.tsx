@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useProfile } from '../hooks/useProfile.ts'
+import { supabase } from '../integrations/supabase/client.ts'
 
 interface WalletBarProps {
   walletAddress: string | null
@@ -21,21 +23,42 @@ export default function WalletBar({
   session,
   onSignOut,
 }: WalletBarProps) {
+  const { profile } = useProfile()
   const [menuOpen, setMenuOpen] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const accountRef = useRef<HTMLDivElement>(null)
+
+  // Close menus on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+      if (accountRef.current && !accountRef.current.contains(e.target as Node)) {
+        setAccountMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   const short = walletAddress
     ? `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`
     : null
 
-  const initials = session?.user?.user_metadata?.full_name
-    ? session.user.user_metadata.full_name
+  // Use profile avatar if available, otherwise fall back to initials
+  const displayName = profile?.full_name || session?.user?.user_metadata?.full_name || session?.user?.email || ''
+  const initials = displayName
+    ? displayName
         .split(' ')
         .map((p: string) => p[0])
         .slice(0, 2)
         .join('')
         .toUpperCase()
     : session?.user?.email?.[0]?.toUpperCase() ?? '?'
+
+  const avatarUrl = profile?.avatar_url || session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture
 
   return (
     <header
@@ -137,7 +160,7 @@ export default function WalletBar({
         {/* Wallet / account / actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
           {walletAddress ? (
-            <div style={{ position: 'relative' }}>
+            <div style={{ position: 'relative' }} ref={menuRef}>
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
                 style={{
@@ -192,7 +215,7 @@ export default function WalletBar({
                     top: 'calc(100% + 8px)',
                     right: 0,
                     backgroundColor: '#FDE5C8',
-                    border: '1.5px solid var(--border)',
+                    border: '1.5px solid rgba(232,82,122,0.2)',
                     borderRadius: '16px',
                     padding: '6px',
                     minWidth: '170px',
@@ -256,15 +279,15 @@ export default function WalletBar({
 
           {/* Supabase account menu */}
           {session ? (
-            <div style={{ position: 'relative' }}>
+            <div style={{ position: 'relative' }} ref={accountRef}>
               <button
                 onClick={() => setAccountMenuOpen(!accountMenuOpen)}
                 style={{
                   width: '36px',
                   height: '36px',
                   borderRadius: '50%',
-                  backgroundColor: 'var(--accent)',
-                  border: 'none',
+                  backgroundColor: avatarUrl ? 'transparent' : 'var(--accent)',
+                  border: '2px solid var(--primary)',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -274,9 +297,23 @@ export default function WalletBar({
                   fontWeight: 700,
                   color: '#fff',
                   flexShrink: 0,
+                  overflow: 'hidden',
+                  padding: 0,
                 }}
               >
-                {initials}
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt=""
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                ) : (
+                  initials
+                )}
               </button>
               {accountMenuOpen && (
                 <div
@@ -285,7 +322,7 @@ export default function WalletBar({
                     top: 'calc(100% + 8px)',
                     right: 0,
                     backgroundColor: '#FDE5C8',
-                    border: '1.5px solid var(--border)',
+                    border: '1.5px solid rgba(232,82,122,0.2)',
                     borderRadius: '16px',
                     padding: '6px',
                     minWidth: '170px',
@@ -293,6 +330,36 @@ export default function WalletBar({
                     zIndex: 100,
                   }}
                 >
+                  {/* User info header */}
+                  <div style={{
+                    padding: '10px 14px',
+                    borderBottom: '1px solid rgba(232,82,122,0.12)',
+                    marginBottom: '4px',
+                  }}>
+                    <p style={{
+                      fontFamily: 'var(--font-heading)',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      color: 'var(--foreground)',
+                      margin: '0 0 2px 0',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}>
+                      {profile?.full_name || displayName || 'User'}
+                    </p>
+                    <p style={{
+                      fontSize: '11px',
+                      color: 'var(--muted-foreground)',
+                      margin: 0,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}>
+                      {profile?.email || session?.user?.email}
+                    </p>
+                  </div>
+
                   {[
                     { label: 'My Donations', view: 'donations' },
                     { label: 'Profile', view: 'profile' },
@@ -313,6 +380,7 @@ export default function WalletBar({
                         fontWeight: 500,
                         color: 'var(--foreground)',
                         borderRadius: '12px',
+                        transition: 'background 0.12s',
                       }}
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(232,82,122,0.1)' }}
                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
@@ -336,6 +404,7 @@ export default function WalletBar({
                       fontWeight: 500,
                       color: '#C0392B',
                       borderRadius: '12px',
+                      transition: 'background 0.12s',
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(192,57,43,0.08)' }}
                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}

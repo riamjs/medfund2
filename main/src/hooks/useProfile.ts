@@ -3,10 +3,13 @@ import { supabase } from "../integrations/supabase/client.ts"
 
 export interface Profile {
   id: string
+  email: string | null
   role: "patient" | "verifier" | "admin"
   org_name: string | null
   full_name: string | null
   avatar_url: string | null
+  wallet_address: string | null
+  auth_provider: string | null
   created_at: string
 }
 
@@ -79,5 +82,26 @@ export function useProfile() {
     return { data, error }
   }
 
-  return { profile, loading, updateProfile }
+  const uploadAvatar = async (file: File) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.user) return { error: new Error("Not authenticated") }
+
+    const fileExt = file.name.split('.').pop()
+    const filePath = `${session.user.id}/avatar.${fileExt}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, file, { upsert: true })
+
+    if (uploadError) return { error: uploadError }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath)
+
+    const { error: updateError } = await updateProfile({ avatar_url: publicUrl })
+    return { error: updateError, url: publicUrl }
+  }
+
+  return { profile, loading, updateProfile, uploadAvatar }
 }
