@@ -5,11 +5,13 @@ import Browse from "./pages/Browse.tsx"
 import Detail from "./pages/Detail.tsx"
 import Create from "./pages/Create.tsx"
 import Auth from "./pages/Auth.tsx"
+import DonationsTracker from "./pages/DonationsTracker.tsx"
+import ProfileSettings from "./pages/ProfileSettings.tsx"
 import { isConnected, requestAccess, getNetwork } from "@stellar/freighter-api"
 import { Horizon } from "@stellar/stellar-sdk"
 import { supabase } from "./integrations/supabase/client.ts"
 
-type View = "landing" | "browse" | "detail" | "create" | "auth"
+type View = "landing" | "browse" | "detail" | "create" | "auth" | "donations" | "profile"
 
 
 const horizon = new Horizon.Server("https://horizon-testnet.stellar.org")
@@ -86,6 +88,11 @@ export default function App() {
     setBalance(null)
   }
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    handleNavigate("landing")
+  }
+
   return (
     <div
       style={{
@@ -156,6 +163,8 @@ export default function App() {
         onDisconnect={handleDisconnect}
         currentView={view}
         onNavigate={handleNavigate}
+        session={session}
+        onSignOut={handleSignOut}
       />
 
       <div style={{ flex: 1 }}>
@@ -177,6 +186,8 @@ export default function App() {
           />
         )}
         {view === "auth" && <Auth onNavigate={handleNavigate} />}
+        {view === "donations" && <DonationsTracker onNavigate={handleNavigate} />}
+        {view === "profile" && <ProfileSettings onNavigate={handleNavigate} />}
       </div>
 
       {/* Footer */}
