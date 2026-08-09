@@ -141,9 +141,8 @@ Visit **http://localhost:5173**.
 
 | Name | Role |
 |---|---|
-| _Add name_ | _Add role (e.g. Full-stack Dev)_ |
-| _Add name_ | _Add role_ |
-| _Add name_ | _Add role_ |
+| _Riam Jaye Santiago_ | _Founder (Solo Builder)_ |
+
 
 ---
 
