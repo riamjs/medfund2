@@ -108,8 +108,6 @@ ESCROW_SECRET_KEY=your_escrow_stellar_secret_key
 PORT=3001
 ```
 
-> ⚠️ **Never commit `.env` files.** Rotate `ESCROW_SECRET_KEY` and `SUPABASE_SERVICE_ROLE_KEY` immediately if they're ever shared or exposed.
-
 ### 4. Set up the escrow account
 
 1. Generate a Stellar testnet keypair for escrow (or use an existing one).
