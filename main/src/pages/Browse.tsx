@@ -1,17 +1,37 @@
-import { useState } from 'react'
-import { fundraisers, type FundraiserStatus } from '../data/fundraisers.ts'
+import { useState, useEffect } from 'react'
+import { supabase } from '../integrations/supabase/client.ts'
+
+type FundraiserStatus =
+  | 'pending_review'
+  | 'awaiting_donations'
+  | 'milestone_pending'
+  | 'verified_released'
+
+interface BrowseCard {
+  id: string
+  patientName: string
+  shortCause: string
+  milestoneLabel: string
+  raised: number
+  goal: number
+  donorCount: number
+  verifierName: string
+  status: FundraiserStatus
+}
 
 interface BrowseProps {
   onNavigate: (view: string, id?: string) => void
 }
 
 const STATUS_LABELS: Record<FundraiserStatus, string> = {
+  pending_review: 'Pending verifier review',
   awaiting_donations: 'Awaiting donations',
   milestone_pending: 'Pending verification',
   verified_released: 'Verified — released',
 }
 
 const STATUS_STYLES: Record<FundraiserStatus, { bg: string; color: string; dot: string }> = {
+  pending_review: { bg: '#EDEDED', color: '#5A5A5A', dot: '#9A9A9A' },
   awaiting_donations: { bg: 'rgba(232,82,122,0.1)', color: '#B84060', dot: '#E8527A' },
   milestone_pending: { bg: '#FFF3DC', color: '#8A5C10', dot: '#D4920A' },
   verified_released: { bg: '#E6F7EE', color: '#1A6635', dot: '#3CAB6A' },
@@ -19,13 +39,72 @@ const STATUS_STYLES: Record<FundraiserStatus, { bg: string; color: string; dot: 
 
 const FILTERS: { label: string; value: FundraiserStatus | 'all' }[] = [
   { label: 'All', value: 'all' },
+  { label: 'Pending review', value: 'pending_review' },
   { label: 'Awaiting donations', value: 'awaiting_donations' },
   { label: 'Pending verification', value: 'milestone_pending' },
   { label: 'Verified & released', value: 'verified_released' },
 ]
 
+function deriveStatus(row: any): FundraiserStatus {
+  if (row.verification_status !== 'approved') return 'pending_review'
+  const milestones = row.milestones ?? []
+  const hasMilestones = milestones.length > 0
+  const allReleased = hasMilestones && milestones.every((m: any) => m.status === 'released')
+  if (allReleased) return 'verified_released'
+  const raised = Number(row.current_amount ?? 0)
+  const goal = Number(row.target_amount ?? 0)
+  if (goal > 0 && raised >= goal) return 'milestone_pending'
+  return 'awaiting_donations'
+}
+
+function mapRow(row: any): BrowseCard {
+  const milestones = row.milestones ?? []
+  const nextMilestone = milestones.find((m: any) => m.status !== 'released')
+  return {
+    id: String(row.id),
+    patientName: row.beneficiary_name || row.title || 'Patient',
+    shortCause: row.description || row.medical_condition || 'Medical fundraiser',
+    milestoneLabel: nextMilestone?.title ?? (milestones.length ? 'All milestones complete' : 'No milestones set'),
+    raised: Number(row.current_amount ?? 0),
+    goal: Number(row.target_amount ?? 0),
+    donorCount: row.donations?.[0]?.count ?? 0,
+    verifierName: row.verifier?.verifier_org_name || 'Verifier pending',
+    status: deriveStatus(row),
+  }
+}
+
 export default function Browse({ onNavigate }: BrowseProps) {
   const [filter, setFilter] = useState<FundraiserStatus | 'all'>('all')
+  const [fundraisers, setFundraisers] = useState<BrowseCard[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      setLoadError(null)
+      const { data, error } = await supabase
+        .from('fundraisers')
+        .select(`
+          *,
+          verifier:profiles!fundraisers_verifier_id_fkey(verifier_org_name),
+          milestones(id, title, status),
+          donations(count)
+        `)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Failed to load fundraisers:', error)
+        setLoadError(error.message)
+        setLoading(false)
+        return
+      }
+
+      setFundraisers((data ?? []).map(mapRow))
+      setLoading(false)
+    }
+    load()
+  }, [])
 
   const filtered = filter === 'all' ? fundraisers : fundraisers.filter(f => f.status === filter)
 

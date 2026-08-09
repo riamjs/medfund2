@@ -103,6 +103,8 @@ router.post("/release", async (req, res) => {
   } catch (err: any) {
     console.error("Release failed:", err);
 
+console.error("FULL EXTRAS:", JSON.stringify(err?.response?.data?.extras, null, 2));
+
     if (err?.response?.data?.extras?.result_codes) {
       return res.status(400).json({
         error: "Stellar transaction failed",
