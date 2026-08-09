@@ -11,6 +11,13 @@ export interface Profile {
   wallet_address: string | null
   auth_provider: string | null
   created_at: string
+  // Verifier fields
+  is_verifier: boolean
+  verifier_status: "pending" | "approved" | "rejected" | null
+  verifier_org_name: string | null
+  verifier_org_type: "hospital" | "ngo" | "clinic" | "foundation" | "other" | null
+  verifier_stellar_address: string | null
+  verifier_application_id: string | null
 }
 
 export function useProfile() {

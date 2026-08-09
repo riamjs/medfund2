@@ -1,334 +1,640 @@
-import { useState } from 'react'
-import { fundraisers, type FundraiserStatus } from '../data/fundraisers'
+import { useState, useEffect } from "react";
+import { supabase } from "../integrations/supabase/client";
+import { signTransaction } from "@stellar/freighter-api";
+import {
+  buildUsdcPaymentTx,
+  submitSignedTx,
+  ESCROW_PUBLIC_KEY,
+  stellarExpertTxUrl,
+  hasUsdcTrustline,
+} from "../lib/stellar";
+import { ensureUsdcTrustline } from "../lib/trustline";
+import { releaseMilestone } from "../lib/milestone-release";
+import {
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  FileText,
+  AlertCircle,
+} from "lucide-react";
 
 interface DetailProps {
-  fundraiserId: string
-  walletAddress: string | null
-  onNavigate: (view: string, id?: string) => void
-  onConnectWallet: () => void
+  fundraiserId: string;
+  walletAddress: string | null;
+  onNavigate: (v: string, id?: string) => void;
+  onConnectWallet: () => void;
 }
 
-type TxState = 'idle' | 'pending' | 'success' | 'error'
+export default function Detail({
+  fundraiserId,
+  walletAddress,
+  onConnectWallet,
+}: DetailProps) {
+  const [fundraiser, setFundraiser] = useState<any>(null);
+  const [milestones, setMilestones] = useState<any[]>([]);
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [donationAmount, setDonationAmount] = useState("");
+  const [donating, setDonating] = useState(false);
+  const [donateError, setDonateError] = useState<string | null>(null);
+  const [lastDonationTx, setLastDonationTx] = useState<string | null>(null);
+  const [verifierActionLoading, setVerifierActionLoading] = useState(false);
+  const [releasingId, setReleasingId] = useState<number | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-const STATUS_LABELS: Record<FundraiserStatus, string> = {
-  awaiting_donations: 'Awaiting donations',
-  milestone_pending: 'Pending verification',
-  verified_released: 'Verified — funds released',
+  const id = Number(fundraiserId);
+
+  const fetchAll = async () => {
+    setLoading(true);
+    setFetchError(null);
+
+    try {
+      const [{ data: f, error: fErr }, { data: m, error: mErr }, { data: { session } }] =
+        await Promise.all([
+          supabase.from("fundraisers").select("*").eq("id", id).single(),
+          supabase.from("milestones").select("*").eq("fundraiser_id", id).order("id"),
+          supabase.auth.getSession(),
+        ]);
+
+      if (fErr) {
+        console.error("Fundraiser fetch error:", fErr);
+        setFetchError(fErr.message);
+        setLoading(false);
+        return;
+      }
+
+      setFundraiser(f);
+      setMilestones(m ?? []);
+
+      if (session?.user) {
+        const { data: p } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", session.user.id)
+          .single();
+        setProfile(p);
+      }
+    } catch (err: any) {
+      console.error("Fetch error:", err);
+      setFetchError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAll();
+  }, [fundraiserId]);
+
+  const isAssignedVerifier =
+    profile &&
+    fundraiser &&
+    profile.id === fundraiser.verifier_id &&
+    profile.is_verifier;
+
+  const handleVerifierDecision = async (decision: "approved" | "rejected") => {
+    setVerifierActionLoading(true);
+    const { error } = await supabase
+      .from("fundraisers")
+      .update({ verification_status: decision })
+      .eq("id", id);
+
+    if (error) {
+      console.error("Verifier decision error:", error);
+      alert("Failed to update: " + error.message);
+    } else {
+      await fetchAll();
+    }
+    setVerifierActionLoading(false);
+  };
+
+  const handleDonate = async () => {
+    if (!walletAddress) {
+      onConnectWallet();
+      return;
+    }
+
+    const amount = Number(donationAmount);
+    if (!amount || amount <= 0 || isNaN(amount)) {
+      setDonateError("Enter a valid amount.");
+      return;
+    }
+
+    setDonating(true);
+    setDonateError(null);
+    setLastDonationTx(null);
+
+    try {
+      // Check trustline first
+      const trust = await ensureUsdcTrustline(walletAddress);
+if (trust.status === "error") throw new Error(trust.message);
+if (trust.status === "user_declined") throw new Error("Trustline setup was declined.");
+if (trust.status === "trustline_added") {
+  // optional: show a toast that trustline was just created
+  console.log("Trustline added:", trust.txHash);
 }
 
-const STATUS_STYLES: Record<FundraiserStatus, { bg: string; color: string }> = {
-  awaiting_donations: { bg: 'rgba(232,82,122,0.1)', color: '#B84060' },
-  milestone_pending: { bg: '#FFF3DC', color: '#8A5C10' },
-  verified_released: { bg: '#E6F7EE', color: '#1A6635' },
-}
+      const tx = await buildUsdcPaymentTx(
+        walletAddress,
+        ESCROW_PUBLIC_KEY,
+        String(amount),
+        `MedFund #${id}`
+      );
 
-const TIMELINE_ICONS: Record<string, string> = {
-  created: '📄',
-  donated: '💸',
-  verified: '✅',
-  released: '🏥',
-}
+      const { signedTxXdr, error: signError } = await signTransaction(
+        tx.toXDR(),
+        {
+          networkPassphrase: "Test SDF Network ; September 2015",
+        }
+      );
 
-const pillBtn: React.CSSProperties = {
-  borderRadius: '100px',
-  fontFamily: 'var(--font-body)',
-  fontWeight: 700,
-  cursor: 'pointer',
-  border: 'none',
-  transition: 'all 0.18s',
-}
+      if (signError || !signedTxXdr) {
+        throw new Error("Transaction was not signed.");
+      }
 
-export default function Detail({ fundraiserId, walletAddress, onNavigate, onConnectWallet }: DetailProps) {
-  const fundraiser = fundraisers.find(f => f.id === fundraiserId)
-  const [donateAmount, setDonateAmount] = useState('')
-  const [txState, setTxState] = useState<TxState>('idle')
-  const [txHash, setTxHash] = useState<string | null>(null)
-  const [txError, setTxError] = useState<string | null>(null)
+      const result = await submitSignedTx(signedTxXdr);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const { error: donationError } = await supabase.from("donations").insert({
+        fundraiser_id: id,
+        donor_wallet: walletAddress,
+        amount,
+        tx_hash: result.hash,
+        donor_id: session?.user?.id ?? null,
+        donor_name: profile?.full_name ?? null,
+        donor_email: profile?.email ?? null,
+        status: "completed",
+      });
+
+      if (donationError) {
+        console.error("Donation record error:", donationError);
+        // Don't throw — the on-chain tx succeeded, we just failed to log it
+      }
+
+      const { error: rpcError } = await supabase.rpc(
+        "increment_fundraiser_amount",
+        {
+          fundraiser_id_param: id,
+          amount_param: amount,
+        }
+      );
+
+      if (rpcError) {
+        console.error("Increment error:", rpcError);
+      }
+
+      setLastDonationTx(result.hash);
+      setDonationAmount("");
+      await fetchAll();
+    } catch (err: any) {
+      console.error("Donation error:", err);
+      setDonateError(err.message ?? "Donation failed.");
+    } finally {
+      setDonating(false);
+    }
+  };
+
+  const handleReleaseMilestone = async (milestone: any) => {
+    if (!fundraiser?.verifier_address) {
+      alert("This fundraiser has no verifier Stellar address on file.");
+      return;
+    }
+
+    const amount = milestone.target_amount ?? fundraiser.current_amount ?? 0;
+    if (amount <= 0) {
+      alert("Invalid release amount.");
+      return;
+    }
+
+    setReleasingId(milestone.id);
+
+    try {
+      await releaseMilestone(
+        milestone.id,
+        fundraiser.verifier_address,
+        amount
+      );
+      await fetchAll();
+    } catch (err: any) {
+      console.error("Release error:", err);
+      alert(err.message ?? "Release failed.");
+    } finally {
+      setReleasingId(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: "60vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Loader2
+          size={28}
+          style={{ color: "var(--primary)", animation: "spin 0.8s linear infinite" }}
+        />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div style={{ padding: "48px", textAlign: "center" }}>
+        <AlertCircle size={32} style={{ color: "#dc2626", marginBottom: "12px" }} />
+        <p style={{ color: "#dc2626" }}>Error loading fundraiser: {fetchError}</p>
+      </div>
+    );
+  }
 
   if (!fundraiser) {
     return (
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '80px 32px' }}>
-        <p style={{ color: 'var(--muted-foreground)' }}>Fundraiser not found.</p>
-        <button onClick={() => onNavigate('browse')} style={{ marginTop: '16px', background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '14px', fontWeight: 700 }}>
-          ← Back to browse
-        </button>
+      <div style={{ padding: "48px", textAlign: "center" }}>
+        Fundraiser not found.
       </div>
-    )
+    );
   }
 
-  const pct = Math.min(100, Math.round((fundraiser.raised / fundraiser.goal) * 100))
-  const st = STATUS_STYLES[fundraiser.status]
-
-  const handleDonate = () => {
-    if (!donateAmount || parseFloat(donateAmount) <= 0) return
-    setTxState('pending')
-    setTxError(null)
-    setTimeout(() => {
-      if (Math.random() > 0.1) {
-        const hash = Array.from({ length: 12 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
-        setTxHash(hash)
-        setTxState('success')
-      } else {
-        setTxError('Transaction rejected. Please check your balance and try again.')
-        setTxState('error')
-      }
-    }, 2400)
-  }
+  const progress = fundraiser.target_amount
+    ? Math.min(100, (fundraiser.current_amount / fundraiser.target_amount) * 100)
+    : 0;
 
   return (
-    <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '48px 32px' }}>
-      <button
-        onClick={() => onNavigate('browse')}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)', fontFamily: 'var(--font-body)', fontSize: '14px', marginBottom: '32px', padding: 0, display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, transition: 'color 0.15s' }}
-        onMouseEnter={e => { e.currentTarget.style.color = 'var(--primary)' }}
-        onMouseLeave={e => { e.currentTarget.style.color = 'var(--muted-foreground)' }}
+    <div
+      style={{ maxWidth: "720px", margin: "0 auto", padding: "32px 24px 60px" }}
+    >
+      {fundraiser.image_url && (
+        <img
+          src={fundraiser.image_url}
+          alt={fundraiser.title}
+          style={{
+            width: "100%",
+            height: "280px",
+            objectFit: "cover",
+            borderRadius: "24px",
+            marginBottom: "20px",
+          }}
+        />
+      )}
+
+      <h1
+        style={{
+          fontFamily: "var(--font-heading)",
+          fontSize: "26px",
+          fontWeight: 900,
+          marginBottom: "6px",
+        }}
       >
-        ← All fundraisers
-      </button>
+        {fundraiser.title}
+      </h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: '48px', alignItems: 'start' }} className="detail-grid">
+      {fundraiser.beneficiary_name && (
+        <p
+          style={{
+            fontSize: "14px",
+            color: "var(--muted-foreground)",
+            marginBottom: "16px",
+          }}
+        >
+          For {fundraiser.beneficiary_name}{" "}
+          {fundraiser.hospital_name && `· ${fundraiser.hospital_name}`}
+        </p>
+      )}
 
-        {/* Left */}
-        <div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: st.bg, color: st.color, borderRadius: '100px', padding: '5px 14px', marginBottom: '20px' }}>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: st.color, flexShrink: 0 }} />
-            <span style={{ fontFamily: 'var(--font-mono-face)', fontSize: '10px', letterSpacing: '0.06em', fontWeight: 500 }}>
-              {STATUS_LABELS[fundraiser.status]}
-            </span>
-          </div>
-
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(32px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, marginBottom: '8px', color: 'var(--foreground)' }}>
-            {fundraiser.patientName}
-          </h1>
-          <p style={{ fontFamily: 'var(--font-heading)', fontSize: '18px', fontStyle: 'italic', color: 'var(--muted-foreground)', marginBottom: '28px', fontWeight: 600 }}>
-            {fundraiser.cause}
-          </p>
-          <p style={{ fontSize: '16px', lineHeight: 1.75, color: '#5A4020', marginBottom: '40px', maxWidth: '560px', fontWeight: 500 }}>
-            {fundraiser.description}
-          </p>
-
-          {/* Milestone */}
-          <section style={{ marginBottom: '40px' }}>
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '22px', fontWeight: 800, marginBottom: '16px', color: 'var(--foreground)', letterSpacing: '-0.01em' }}>
-              Treatment milestone
-            </h2>
-            <div style={{ backgroundColor: '#FDE5C8', borderRadius: '20px', overflow: 'hidden', border: '1.5px solid rgba(232,82,122,0.15)' }}>
-              <div style={{ padding: '16px 22px', borderBottom: '1px solid rgba(232,82,122,0.12)', backgroundColor: 'rgba(232,82,122,0.07)' }}>
-                <p style={{ fontFamily: 'var(--font-mono-face)', fontSize: '10px', color: 'var(--primary)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 500 }}>Milestone</p>
-                <p style={{ fontSize: '15px', fontWeight: 800, color: 'var(--foreground)' }}>{fundraiser.milestoneLabel}</p>
-              </div>
-              <div style={{ padding: '18px 22px' }}>
-                <p style={{ fontSize: '14px', lineHeight: 1.65, color: '#5A4020', marginBottom: '16px', fontWeight: 500 }}>
-                  {fundraiser.milestoneDescription}
-                </p>
-                <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                  <div>
-                    <p style={{ fontFamily: 'var(--font-mono-face)', fontSize: '9px', letterSpacing: '0.1em', color: 'var(--primary)', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 500 }}>Verifier</p>
-                    <p style={{ fontSize: '14px', fontWeight: 700, color: 'var(--foreground)' }}>{fundraiser.verifierName}</p>
-                  </div>
-                  <div>
-                    <p style={{ fontFamily: 'var(--font-mono-face)', fontSize: '9px', letterSpacing: '0.1em', color: 'var(--primary)', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 500 }}>Verifier address</p>
-                    <p style={{ fontFamily: 'var(--font-mono-face)', fontSize: '12px', color: 'var(--foreground)' }}>{fundraiser.verifierAddress}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Timeline */}
-          <section>
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '22px', fontWeight: 800, marginBottom: '24px', color: 'var(--foreground)', letterSpacing: '-0.01em' }}>
-              Transaction timeline
-            </h2>
-            <div style={{ position: 'relative', paddingLeft: '28px' }}>
-              <div style={{ position: 'absolute', left: '10px', top: '16px', bottom: '16px', width: '1px', backgroundColor: 'rgba(232,82,122,0.2)' }} />
-              {fundraiser.timeline.map((event, i) => {
-                const completed = event.timestamp !== null
-                return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', marginBottom: i < fundraiser.timeline.length - 1 ? '28px' : '0', position: 'relative' }}>
-                    <div style={{
-                      position: 'absolute',
-                      left: '-22px',
-                      top: '3px',
-                      width: '14px',
-                      height: '14px',
-                      borderRadius: '50%',
-                      backgroundColor: completed ? 'var(--primary)' : 'rgba(232,82,122,0.15)',
-                      border: `2px solid ${completed ? 'var(--primary)' : 'rgba(232,82,122,0.3)'}`,
-                      flexShrink: 0,
-                      zIndex: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}>
-                      {completed && <div style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: 'white' }} />}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                        <p style={{ fontWeight: 700, fontSize: '15px', color: completed ? 'var(--foreground)' : 'var(--muted-foreground)' }}>
-                          {TIMELINE_ICONS[event.key]} {event.label}
-                        </p>
-                        {event.timestamp && (
-                          <span style={{ fontFamily: 'var(--font-mono-face)', fontSize: '11px', color: 'var(--muted-foreground)' }}>
-                            {event.timestamp}
-                          </span>
-                        )}
-                      </div>
-                      {event.txHash && (
-                        <a
-                          href={`https://stellar.expert/explorer/public/tx/${event.txHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ fontFamily: 'var(--font-mono-face)', fontSize: '11px', color: 'var(--primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}
-                          onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline' }}
-                          onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none' }}
-                        >
-                          {event.txHash.slice(0, 8)}...{event.txHash.slice(-4)} ↗
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
+      <div
+        style={{
+          backgroundColor: "#FDE5C8",
+          borderRadius: "16px",
+          padding: "20px",
+          marginBottom: "20px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: "13px",
+            marginBottom: "8px",
+          }}
+        >
+          <strong>{fundraiser.current_amount ?? 0} USDC raised</strong>
+          <span style={{ color: "var(--muted-foreground)" }}>
+            of {fundraiser.target_amount} USDC
+          </span>
         </div>
-
-        {/* Right — donate panel */}
-        <div style={{ position: 'sticky', top: '88px' }}>
-          {/* Progress */}
-          <div style={{ backgroundColor: '#FDE5C8', border: '1.5px solid rgba(232,82,122,0.2)', borderRadius: '24px', padding: '24px', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
-              <span style={{ fontFamily: 'var(--font-mono-face)', fontSize: '30px', fontWeight: 500, color: 'var(--primary)' }}>
-                {fundraiser.raised.toLocaleString()}
-              </span>
-              <span style={{ fontFamily: 'var(--font-mono-face)', fontSize: '12px', color: 'var(--muted-foreground)' }}>USDC</span>
-            </div>
-            <p style={{ fontSize: '13px', color: 'var(--muted-foreground)', marginBottom: '14px', fontWeight: 500 }}>
-              raised of {fundraiser.goal.toLocaleString()} USDC goal · {pct}%
-            </p>
-            <div style={{ height: '8px', backgroundColor: 'rgba(232,82,122,0.18)', borderRadius: '100px', overflow: 'hidden', marginBottom: '14px' }}>
-              <div style={{ width: `${pct}%`, height: '100%', backgroundColor: pct >= 100 ? '#3CAB6A' : 'var(--primary)', borderRadius: '100px', transition: 'width 0.6s ease' }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--muted-foreground)', fontWeight: 500 }}>
-              <span>{fundraiser.donorCount} donors</span>
-              <span style={{ fontFamily: 'var(--font-mono-face)', fontSize: '10px' }}>ESCROW: {fundraiser.escrowAddress}</span>
-            </div>
-          </div>
-
-          {/* Donate form */}
-          {fundraiser.status !== 'verified_released' && (
-            <div style={{ backgroundColor: '#FDE5C8', border: '1.5px solid rgba(232,82,122,0.2)', borderRadius: '24px', padding: '24px', marginBottom: '16px' }}>
-              <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '18px', fontWeight: 800, marginBottom: '16px', color: 'var(--foreground)', letterSpacing: '-0.01em' }}>
-                Donate USDC
-              </h3>
-
-              {txState === 'success' ? (
-                <div>
-                  <div style={{ backgroundColor: '#E6F7EE', border: '1px solid #A8DFC0', borderRadius: '16px', padding: '16px', marginBottom: '14px' }}>
-                    <p style={{ fontWeight: 700, color: '#1A6635', fontSize: '14px', marginBottom: '6px' }}>✓ Donation received</p>
-                    <p style={{ fontSize: '13px', color: '#1A6635', marginBottom: '10px', fontWeight: 500 }}>
-                      Your {donateAmount} USDC is held in escrow until treatment is verified.
-                    </p>
-                    {txHash && (
-                      <a href={`https://stellar.expert/explorer/public/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
-                        style={{ fontFamily: 'var(--font-mono-face)', fontSize: '11px', color: 'var(--primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}
-                        onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline' }}
-                        onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none' }}
-                      >
-                        View on stellar.expert ↗
-                      </a>
-                    )}
-                  </div>
-                  <button onClick={() => { setTxState('idle'); setDonateAmount(''); setTxHash(null) }}
-                    style={{ ...pillBtn, width: '100%', padding: '10px', background: 'none', border: '1.5px solid rgba(232,82,122,0.3)', fontSize: '13px', color: 'var(--muted-foreground)', fontWeight: 600 }}>
-                    Donate again
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                    {['10', '25', '50', '100'].map(preset => (
-                      <button key={preset} onClick={() => setDonateAmount(preset)}
-                        style={{ ...pillBtn, flex: 1, padding: '8px 4px', border: '2px solid', borderColor: donateAmount === preset ? 'var(--primary)' : 'rgba(232,82,122,0.25)', backgroundColor: donateAmount === preset ? 'var(--primary)' : 'transparent', color: donateAmount === preset ? 'white' : 'var(--foreground)', fontSize: '13px', fontWeight: 700 }}>
-                        ${preset}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', border: '2px solid rgba(232,82,122,0.25)', borderRadius: '16px', overflow: 'hidden', marginBottom: '12px', backgroundColor: 'rgba(232,82,122,0.05)', transition: 'border-color 0.15s' }}
-                    onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--primary)' }}
-                    onBlurCapture={e => { e.currentTarget.style.borderColor = 'rgba(232,82,122,0.25)' }}
-                  >
-                    <span style={{ padding: '11px 14px', fontFamily: 'var(--font-mono-face)', fontSize: '13px', color: 'var(--primary)', borderRight: '1px solid rgba(232,82,122,0.2)', fontWeight: 500 }}>USDC</span>
-                    <input
-                      type="number"
-                      placeholder="Custom amount"
-                      value={donateAmount}
-                      onChange={e => setDonateAmount(e.target.value)}
-                      style={{ flex: 1, padding: '11px 14px', border: 'none', backgroundColor: 'transparent', fontFamily: 'var(--font-mono-face)', fontSize: '14px', color: 'var(--foreground)', outline: 'none' }}
-                    />
-                  </div>
-
-                  {txState === 'error' && txError && (
-                    <div style={{ backgroundColor: '#FFF0F0', border: '1px solid #F4BCBC', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
-                      <p style={{ fontSize: '12px', color: '#8B2020', fontWeight: 500 }}>{txError}</p>
-                    </div>
-                  )}
-
-                  {walletAddress ? (
-                    <button onClick={handleDonate} disabled={txState === 'pending' || !donateAmount}
-                      style={{ ...pillBtn, width: '100%', padding: '14px', backgroundColor: txState === 'pending' || !donateAmount ? 'rgba(232,82,122,0.3)' : 'var(--primary)', color: 'white', fontSize: '15px', cursor: txState === 'pending' || !donateAmount ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: txState === 'pending' || !donateAmount ? 'none' : '0 8px 24px rgba(232,82,122,0.35)' }}>
-                      {txState === 'pending' ? (
-                        <>
-                          <span style={{ width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                          Sending…
-                        </>
-                      ) : `Donate ${donateAmount ? donateAmount + ' USDC' : 'USDC'}`}
-                    </button>
-                  ) : (
-                    <button onClick={onConnectWallet}
-                      style={{ ...pillBtn, width: '100%', padding: '14px', backgroundColor: 'var(--primary)', color: 'white', fontSize: '15px', boxShadow: '0 8px 24px rgba(232,82,122,0.35)' }}
-                      onMouseEnter={e => { e.currentTarget.style.opacity = '0.9' }}
-                      onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
-                      Connect wallet to donate
-                    </button>
-                  )}
-                  <p style={{ fontSize: '11px', color: 'var(--muted-foreground)', textAlign: 'center', marginTop: '10px', lineHeight: 1.5, fontWeight: 500 }}>
-                    Funds held in escrow on Stellar until treatment is verified.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {fundraiser.status === 'verified_released' && (
-            <div style={{ backgroundColor: '#E6F7EE', border: '1px solid #A8DFC0', borderRadius: '20px', padding: '20px', marginBottom: '16px' }}>
-              <p style={{ fontWeight: 800, color: '#1A6635', marginBottom: '6px', fontSize: '15px' }}>✓ Treatment verified & funds released</p>
-              <p style={{ fontSize: '13px', color: '#1E6B3A', lineHeight: 1.55, fontWeight: 500 }}>
-                This fundraiser reached its goal and treatment was confirmed. Funds have been released to the hospital.
-              </p>
-            </div>
-          )}
-
-          <div style={{ backgroundColor: 'rgba(232,82,122,0.06)', border: '1.5px solid rgba(232,82,122,0.15)', borderRadius: '20px', padding: '18px' }}>
-            <p style={{ fontFamily: 'var(--font-mono-face)', fontSize: '9px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '12px', fontWeight: 500 }}>
-              On-chain details
-            </p>
-            {[{ label: 'Escrow', value: fundraiser.escrowAddress }, { label: 'Verifier', value: fundraiser.verifierAddress }, { label: 'Creator', value: fundraiser.creatorAddress }].map(({ label, value }) => (
-              <div key={label} style={{ marginBottom: '10px' }}>
-                <p style={{ fontSize: '10px', color: 'var(--muted-foreground)', marginBottom: '2px', fontWeight: 600 }}>{label}</p>
-                <p style={{ fontFamily: 'var(--font-mono-face)', fontSize: '11px', color: 'var(--foreground)', wordBreak: 'break-all' }}>{value}</p>
-              </div>
-            ))}
-          </div>
+        <div
+          style={{
+            height: "8px",
+            borderRadius: "10px",
+            backgroundColor: "rgba(232,82,122,0.15)",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${progress}%`,
+              borderRadius: "10px",
+              backgroundColor: "var(--primary)",
+            }}
+          />
         </div>
       </div>
 
-      <style>{`
-        @media (max-width: 860px) { .detail-grid { grid-template-columns: 1fr !important; } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
-    </main>
-  )
+      <p style={{ fontSize: "14px", lineHeight: 1.6, marginBottom: "24px" }}>
+        {fundraiser.description}
+      </p>
+
+      {/* Verifier review banner */}
+      {fundraiser.verification_status !== "approved" && isAssignedVerifier && (
+        <div
+          style={{
+            backgroundColor: "rgba(234,179,8,0.1)",
+            border: "1.5px solid rgba(234,179,8,0.3)",
+            borderRadius: "16px",
+            padding: "20px",
+            marginBottom: "24px",
+          }}
+        >
+          <h3
+            style={{
+              fontFamily: "var(--font-heading)",
+              fontWeight: 700,
+              marginBottom: "8px",
+            }}
+          >
+            Verifier Action Required
+          </h3>
+          {(fundraiser.medical_documents ?? []).map(
+            (doc: any, i: number) => (
+              <a
+                key={i}
+                href={doc.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "13px",
+                  marginBottom: "6px",
+                }}
+              >
+                <FileText size={14} /> {doc.name}{" "}
+                <ExternalLink size={11} />
+              </a>
+            )
+          )}
+          <div
+            style={{ display: "flex", gap: "10px", marginTop: "12px" }}
+          >
+            <button
+              onClick={() => handleVerifierDecision("rejected")}
+              disabled={verifierActionLoading}
+              style={{
+                flex: 1,
+                padding: "10px",
+                borderRadius: "100px",
+                border: "1.5px solid #dc2626",
+                background: "none",
+                color: "#dc2626",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Reject
+            </button>
+            <button
+              onClick={() => handleVerifierDecision("approved")}
+              disabled={verifierActionLoading}
+              style={{
+                flex: 1,
+                padding: "10px",
+                borderRadius: "100px",
+                border: "none",
+                backgroundColor: "#22c55e",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Approve Fundraiser
+            </button>
+          </div>
+        </div>
+      )}
+
+      {fundraiser.verification_status === "pending" && !isAssignedVerifier && (
+        <div
+          style={{
+            fontSize: "13px",
+            color: "var(--muted-foreground)",
+            marginBottom: "24px",
+          }}
+        >
+          This fundraiser is awaiting verifier approval before it can accept
+          donations.
+        </div>
+      )}
+
+      {/* Donation section */}
+      {fundraiser.verification_status === "approved" && (
+        <div
+          style={{
+            backgroundColor: "#FDE5C8",
+            borderRadius: "16px",
+            padding: "20px",
+            marginBottom: "24px",
+          }}
+        >
+          <h3
+            style={{
+              fontFamily: "var(--font-heading)",
+              fontWeight: 700,
+              marginBottom: "10px",
+            }}
+          >
+            Donate
+          </h3>
+          {!walletAddress ? (
+            <button
+              onClick={onConnectWallet}
+              style={{
+                padding: "12px 20px",
+                borderRadius: "100px",
+                border: "2px solid var(--primary)",
+                background: "none",
+                color: "var(--primary)",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Connect Wallet to Donate
+            </button>
+          ) : (
+            <div style={{ display: "flex", gap: "10px" }}>
+              <input
+                type="number"
+                min="1"
+                value={donationAmount}
+                onChange={(e) => setDonationAmount(e.target.value)}
+                placeholder="Amount (USDC)"
+                style={{
+                  flex: 1,
+                  padding: "11px 14px",
+                  borderRadius: "12px",
+                  border: "1.5px solid rgba(232,82,122,0.3)",
+                  fontSize: "14px",
+                }}
+              />
+              <button
+                onClick={handleDonate}
+                disabled={donating}
+                style={{
+                  padding: "11px 24px",
+                  borderRadius: "100px",
+                  border: "none",
+                  backgroundColor: "var(--primary)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  opacity: donating ? 0.7 : 1,
+                }}
+              >
+                {donating ? "Sending…" : "Donate"}
+              </button>
+            </div>
+          )}
+          {donateError && (
+            <p style={{ color: "#dc2626", fontSize: "13px", marginTop: "8px" }}>
+              {donateError}
+            </p>
+          )}
+          {lastDonationTx && (
+            <a
+              href={stellarExpertTxUrl(lastDonationTx)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                fontSize: "12px",
+                marginTop: "10px",
+                color: "#166534",
+              }}
+            >
+              <CheckCircle2 size={14} /> Donation confirmed — view on Stellar
+              Expert <ExternalLink size={11} />
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* Milestones */}
+      <h3
+        style={{
+          fontFamily: "var(--font-heading)",
+          fontWeight: 700,
+          marginBottom: "12px",
+        }}
+      >
+        Milestones
+      </h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        {milestones.map((m) => (
+          <div
+            key={m.id}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              backgroundColor: "#fff",
+              border: "1px solid rgba(232,82,122,0.15)",
+              borderRadius: "14px",
+              padding: "14px 18px",
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 700, fontSize: "14px" }}>
+                {m.title || m.description || "Untitled milestone"}
+              </div>
+              {m.target_amount && (
+                <div
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--muted-foreground)",
+                  }}
+                >
+                  {m.target_amount} USDC
+                </div>
+              )}
+              {m.tx_hash && (
+                <a
+                  href={stellarExpertTxUrl(m.tx_hash)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--muted-foreground)",
+                  }}
+                >
+                  View release on Stellar Expert{" "}
+                  <ExternalLink size={10} />
+                </a>
+              )}
+            </div>
+            {m.status === "released" || m.tx_hash ? (
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "12px",
+                  color: "#166534",
+                  fontWeight: 700,
+                }}
+              >
+                <CheckCircle2 size={14} /> Released
+              </span>
+            ) : isAssignedVerifier ? (
+              <button
+                onClick={() => handleReleaseMilestone(m)}
+                disabled={releasingId === m.id}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "100px",
+                  border: "none",
+                  backgroundColor: "var(--primary)",
+                  color: "#fff",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                {releasingId === m.id
+                  ? "Releasing…"
+                  : "Verify & Release Funds"}
+              </button>
+            ) : (
+              <span
+                style={{
+                  fontSize: "12px",
+                  color: "var(--muted-foreground)",
+                }}
+              >
+                Pending
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }

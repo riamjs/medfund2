@@ -1,221 +1,488 @@
-import { useState } from 'react'
+import { useState, useEffect } from "react";
+import { supabase } from "../integrations/supabase/client";
+import { ESCROW_PUBLIC_KEY } from "../lib/stellar";
+import { Plus, X, Upload, Loader2, CheckCircle2 } from "lucide-react";
 
 interface CreateProps {
-  walletAddress: string | null
-  onConnectWallet: () => void
-  onNavigate: (view: string) => void
+  walletAddress: string | null;
+  onConnectWallet: () => void;
+  onNavigate: (v: string, id?: string) => void;
 }
 
-type TxState = 'idle' | 'pending' | 'success' | 'error'
-
-const pillBtn: React.CSSProperties = {
-  borderRadius: '100px',
-  fontFamily: 'var(--font-body)',
-  fontWeight: 700,
-  cursor: 'pointer',
-  border: 'none',
-  transition: 'all 0.18s',
+interface VerifierOption {
+  id: string;
+  verifier_org_name: string | null;
+  verifier_org_type: string | null;
+  verifier_stellar_address: string | null;
 }
 
-export default function Create({ walletAddress, onConnectWallet, onNavigate }: CreateProps) {
-  const [form, setForm] = useState({ patientName: '', verifierAddress: '', milestoneDescription: '', goalAmount: '' })
-  const [txState, setTxState] = useState<TxState>('idle')
-  const [txHash, setTxHash] = useState<string | null>(null)
-  const [errors, setErrors] = useState<Partial<typeof form>>({})
+interface MilestoneDraft {
+  title: string;
+  description: string;
+  target_amount: string;
+}
 
-  const validate = () => {
-    const e: Partial<typeof form> = {}
-    if (!form.patientName.trim()) e.patientName = 'Required'
-    if (!form.verifierAddress.trim()) e.verifierAddress = 'Required'
-    else if (!/^G[A-Z0-9]{55}$/.test(form.verifierAddress.trim()) && !form.verifierAddress.trim().includes('...')) {
-      e.verifierAddress = 'Enter a valid Stellar address (starts with G)'
+export default function Create({ onNavigate }: CreateProps) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [hospitalName, setHospitalName] = useState("");
+  const [beneficiaryName, setBeneficiaryName] = useState("");
+  const [medicalCondition, setMedicalCondition] = useState("");
+  const [targetAmount, setTargetAmount] = useState("");
+  const [coverImage, setCoverImage] = useState<File | null>(null);
+  const [medicalDocs, setMedicalDocs] = useState<File[]>([]);
+  const [verifiers, setVerifiers] = useState<VerifierOption[]>([]);
+  const [verifierId, setVerifierId] = useState("");
+  const [milestones, setMilestones] = useState<MilestoneDraft[]>([
+    { title: "", description: "", target_amount: "" },
+  ]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from("profiles")
+      .select("id, verifier_org_name, verifier_org_type, verifier_stellar_address")
+      .eq("is_verifier", true)
+      .eq("verifier_status", "approved")
+      .then(({ data, error }) => {
+        if (error) console.error("Failed to load verifiers:", error);
+        setVerifiers((data as VerifierOption[]) ?? []);
+      });
+  }, []);
+
+  const addMilestone = () =>
+    setMilestones((prev) => [
+      ...prev,
+      { title: "", description: "", target_amount: "" },
+    ]);
+
+  const removeMilestone = (i: number) =>
+    setMilestones((prev) => prev.filter((_, idx) => idx !== i));
+
+  const updateMilestone = (
+    i: number,
+    field: keyof MilestoneDraft,
+    value: string
+  ) =>
+    setMilestones((prev) =>
+      prev.map((m, idx) => (idx === i ? { ...m, [field]: value } : m))
+    );
+
+  const canSubmit =
+    title.trim() &&
+    targetAmount &&
+    Number(targetAmount) > 0 &&
+    verifierId &&
+    milestones.every((m) => m.title.trim());
+
+  const uploadFile = async (file: File, folder: string, userId: string) => {
+    const path = `${folder}/${userId}/${Date.now()}_${file.name}`;
+    const { error: uploadError } = await supabase.storage
+      .from("documents")
+      .upload(path, file);
+    if (uploadError) throw uploadError;
+    const { data } = supabase.storage.from("documents").getPublicUrl(path);
+    return data.publicUrl;
+  };
+
+  const handleSubmit = async () => {
+    if (!ESCROW_PUBLIC_KEY) {
+      setError("Escrow wallet not configured. Check .env.local");
+      return;
     }
-    if (!form.milestoneDescription.trim()) e.milestoneDescription = 'Required'
-    if (!form.goalAmount || parseFloat(form.goalAmount) <= 0) e.goalAmount = 'Enter a valid amount'
-    return e
-  }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const errs = validate()
-    if (Object.keys(errs).length > 0) { setErrors(errs); return }
-    setErrors({})
-    setTxState('pending')
-    setTimeout(() => {
-      const hash = Array.from({ length: 12 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
-      setTxHash(hash)
-      setTxState('success')
-    }, 2800)
-  }
+    setSubmitting(true);
+    setError(null);
 
-  const inputStyle = (key: keyof typeof form): React.CSSProperties => ({
-    width: '100%',
-    padding: '13px 18px',
-    border: `2px solid ${errors[key] ? '#E8527A' : 'rgba(232,82,122,0.25)'}`,
-    borderRadius: '16px',
-    backgroundColor: 'rgba(232,82,122,0.04)',
-    fontFamily: key === 'verifierAddress' || key === 'goalAmount' ? 'var(--font-mono-face)' : 'var(--font-body)',
-    fontSize: '15px',
-    fontWeight: 500,
-    color: 'var(--foreground)',
-    outline: 'none',
-    transition: 'border-color 0.15s',
-  })
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
 
-  const field = (label: string, key: keyof typeof form, opts: { type?: string; placeholder?: string; hint?: string; multiline?: boolean } = {}) => (
-    <div style={{ marginBottom: '24px' }}>
-      <label style={{ display: 'block', fontFamily: 'var(--font-mono-face)', fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '8px', fontWeight: 500 }}>
-        {label}
-      </label>
-      {opts.multiline ? (
-        <textarea
-          value={form[key]}
-          onChange={e => setForm({ ...form, [key]: e.target.value })}
-          placeholder={opts.placeholder}
-          rows={4}
-          style={{ ...inputStyle(key), resize: 'vertical', lineHeight: 1.6 }}
-          onFocus={e => { e.target.style.borderColor = 'var(--primary)' }}
-          onBlur={e => { e.target.style.borderColor = errors[key] ? '#E8527A' : 'rgba(232,82,122,0.25)' }}
-        />
-      ) : (
-        <input
-          type={opts.type || 'text'}
-          value={form[key]}
-          onChange={e => setForm({ ...form, [key]: e.target.value })}
-          placeholder={opts.placeholder}
-          style={inputStyle(key)}
-          onFocus={e => { e.target.style.borderColor = 'var(--primary)' }}
-          onBlur={e => { e.target.style.borderColor = errors[key] ? '#E8527A' : 'rgba(232,82,122,0.25)' }}
-        />
-      )}
-      {errors[key] && <p style={{ fontSize: '12px', color: '#E8527A', marginTop: '5px', fontWeight: 600 }}>{errors[key]}</p>}
-      {opts.hint && !errors[key] && <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', marginTop: '5px', lineHeight: 1.5, fontWeight: 500 }}>{opts.hint}</p>}
-    </div>
-  )
+      if (sessionError || !session?.user) {
+        throw new Error("You need to be signed in to create a fundraiser.");
+      }
 
-  if (txState === 'success') {
-    return (
-      <main style={{ maxWidth: '640px', margin: '0 auto', padding: '80px 32px' }}>
-        <div style={{ backgroundColor: '#FDE5C8', border: '1.5px solid rgba(232,82,122,0.2)', borderRadius: '32px', padding: '56px 48px', textAlign: 'center' }}>
-          <div style={{ width: '72px', height: '72px', borderRadius: '50%', backgroundColor: 'rgba(232,82,122,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', fontSize: '32px' }}>
-            🎉
-          </div>
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '36px', fontWeight: 900, marginBottom: '12px', color: 'var(--foreground)', letterSpacing: '-0.03em' }}>
-            Fundraiser created!
-          </h1>
-          <p style={{ fontSize: '15px', color: 'var(--muted-foreground)', lineHeight: 1.65, marginBottom: '28px', fontWeight: 500 }}>
-            Your fundraiser for <strong style={{ color: 'var(--foreground)' }}>{form.patientName}</strong> is live on Stellar. Donors can now contribute to the escrow.
-          </p>
-          {txHash && (
-            <div style={{ backgroundColor: 'rgba(232,82,122,0.08)', borderRadius: '16px', padding: '14px 18px', marginBottom: '28px', textAlign: 'left' }}>
-              <p style={{ fontFamily: 'var(--font-mono-face)', fontSize: '10px', color: 'var(--primary)', marginBottom: '4px', letterSpacing: '0.08em', fontWeight: 500 }}>TRANSACTION</p>
-              <a href={`https://stellar.expert/explorer/public/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
-                style={{ fontFamily: 'var(--font-mono-face)', fontSize: '12px', color: 'var(--primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '5px', fontWeight: 500 }}
-                onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline' }}
-                onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none' }}
-              >
-                {txHash} ↗ stellar.expert
-              </a>
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button onClick={() => onNavigate('browse')} style={{ ...pillBtn, padding: '12px 28px', backgroundColor: 'var(--primary)', color: 'white', fontSize: '15px', boxShadow: '0 8px 24px rgba(232,82,122,0.35)' }}>
-              Browse all fundraisers
-            </button>
-            <button onClick={() => { setForm({ patientName: '', verifierAddress: '', milestoneDescription: '', goalAmount: '' }); setTxState('idle'); setTxHash(null) }}
-              style={{ ...pillBtn, padding: '12px 24px', backgroundColor: 'transparent', color: 'var(--primary)', border: '2px solid var(--primary)', fontSize: '14px' }}>
-              Create another
-            </button>
-          </div>
-        </div>
-      </main>
-    )
-  }
+      let imageUrl: string | null = null;
+      if (coverImage) {
+        imageUrl = await uploadFile(coverImage, "covers", session.user.id);
+      }
+
+      const medicalDocUrls: { name: string; url: string }[] = [];
+      for (const doc of medicalDocs) {
+        const url = await uploadFile(doc, "medical", session.user.id);
+        medicalDocUrls.push({ name: doc.name, url });
+      }
+
+      const verifier = verifiers.find((v) => v.id === verifierId);
+
+      const { data: fundraiser, error: insertError } = await supabase
+        .from("fundraisers")
+        .insert({
+          contract_id: ESCROW_PUBLIC_KEY,
+          patient_id: session.user.id,
+          title: title.trim(),
+          description: description.trim() || null,
+          hospital_name: hospitalName.trim() || null,
+          beneficiary_name: beneficiaryName.trim() || null,
+          medical_condition: medicalCondition.trim() || null,
+          target_amount: Number(targetAmount),
+          image_url: imageUrl,
+          verification_status: "pending",
+          status: "active",
+          verifier_id: verifierId,
+          verifier_address: verifier?.verifier_stellar_address ?? null,
+          medical_documents: medicalDocUrls,
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error("Fundraiser insert error:", insertError);
+        throw new Error(insertError.message || "Failed to create fundraiser.");
+      }
+
+      if (!fundraiser?.id) {
+        throw new Error("Fundraiser created but no ID returned.");
+      }
+
+      const milestoneRows = milestones
+        .filter((m) => m.title.trim())
+        .map((m) => ({
+          fundraiser_id: fundraiser.id,
+          title: m.title.trim(),
+          description: m.description.trim() || null,
+          target_amount: m.target_amount ? Number(m.target_amount) : null,
+          status: "pending",
+        }));
+
+      if (milestoneRows.length > 0) {
+        const { error: milestoneError } = await supabase
+          .from("milestones")
+          .insert(milestoneRows);
+
+        if (milestoneError) {
+          console.error("Milestone insert error:", milestoneError);
+          throw new Error("Fundraiser created but milestones failed.");
+        }
+      }
+
+      onNavigate("detail", String(fundraiser.id));
+    } catch (err: any) {
+      console.error("Create fundraiser error:", err);
+      setError(err.message ?? "Something went wrong creating your fundraiser.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
-    <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '56px 32px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '64px', alignItems: 'start' }} className="create-grid">
-        <div>
-          <p style={{ fontFamily: 'var(--font-mono-face)', fontSize: '11px', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '10px', fontWeight: 500 }}>
-            New fundraiser
-          </p>
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', color: 'var(--foreground)', marginBottom: '8px', lineHeight: 1.0 }}>
-            Start a fundraiser
-          </h1>
-          <p style={{ fontSize: '16px', color: 'var(--muted-foreground)', lineHeight: 1.65, marginBottom: '40px', maxWidth: '480px', fontWeight: 500 }}>
-            Funds are held in a Stellar escrow and released only after your verifier confirms treatment completion.
-          </p>
+    <div style={{ maxWidth: "640px", margin: "0 auto", padding: "32px 24px 60px" }}>
+      <h1
+        style={{
+          fontFamily: "var(--font-heading)",
+          fontSize: "28px",
+          fontWeight: 900,
+          marginBottom: "6px",
+        }}
+      >
+        Start a Fundraiser
+      </h1>
+      <p
+        style={{
+          fontSize: "14px",
+          color: "var(--muted-foreground)",
+          marginBottom: "28px",
+        }}
+      >
+        Every fundraiser is reviewed by a verifier before it can accept donations.
+      </p>
 
-          {!walletAddress && (
-            <div style={{ backgroundColor: '#FFF3DC', border: '1.5px solid #D4920A', borderRadius: '20px', padding: '18px 22px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <span style={{ fontSize: '22px', flexShrink: 0 }}>⚠️</span>
-              <div>
-                <p style={{ fontSize: '14px', fontWeight: 700, color: '#8A5C10', marginBottom: '4px' }}>Wallet not connected</p>
-                <p style={{ fontSize: '13px', color: '#8A5C10', fontWeight: 500 }}>
-                  You need a wallet to deploy the escrow contract.{' '}
-                  <button onClick={onConnectWallet} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontWeight: 700, fontSize: '13px', padding: 0, fontFamily: 'var(--font-body)', textDecoration: 'underline' }}>
-                    Connect wallet
-                  </button>
-                </p>
-              </div>
-            </div>
-          )}
+      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+        <Field label="Fundraiser Title *">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Heart Surgery for Maria"
+            style={inputStyle}
+          />
+        </Field>
 
-          <form onSubmit={handleSubmit}>
-            {field('Patient name', 'patientName', { placeholder: 'e.g. Maria Santos', hint: 'Full name of the patient receiving treatment.' })}
-            {field('Verifier address', 'verifierAddress', { placeholder: 'G...', hint: 'Stellar address of the hospital or NGO who will verify treatment.' })}
-            {field('Milestone description', 'milestoneDescription', { multiline: true, placeholder: 'Describe exactly what treatment must be completed for funds to release.' })}
-            {field('Goal amount (USDC)', 'goalAmount', { type: 'number', placeholder: '0.00', hint: 'Total USDC needed to cover the treatment milestone.' })}
+        <Field label="Description">
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+            style={{ ...inputStyle, resize: "vertical" }}
+          />
+        </Field>
 
-            <button type="submit" disabled={txState === 'pending' || !walletAddress}
-              style={{ ...pillBtn, width: '100%', padding: '16px', backgroundColor: txState === 'pending' || !walletAddress ? 'rgba(232,82,122,0.3)' : 'var(--primary)', color: 'white', fontSize: '16px', cursor: txState === 'pending' || !walletAddress ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', boxShadow: txState === 'pending' || !walletAddress ? 'none' : '0 8px 24px rgba(232,82,122,0.35)' }}>
-              {txState === 'pending' ? (
-                <>
-                  <span style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                  Deploying escrow contract…
-                </>
-              ) : 'Deploy fundraiser'}
-            </button>
-          </form>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+          <Field label="Beneficiary Name">
+            <input
+              value={beneficiaryName}
+              onChange={(e) => setBeneficiaryName(e.target.value)}
+              style={inputStyle}
+            />
+          </Field>
+          <Field label="Hospital / Clinic">
+            <input
+              value={hospitalName}
+              onChange={(e) => setHospitalName(e.target.value)}
+              style={inputStyle}
+            />
+          </Field>
         </div>
 
-        <div style={{ position: 'sticky', top: '88px' }}>
-          <div style={{ backgroundColor: '#FDE5C8', border: '1.5px solid rgba(232,82,122,0.2)', borderRadius: '24px', overflow: 'hidden', marginBottom: '16px' }}>
-            <div style={{ backgroundColor: 'var(--primary)', padding: '16px 22px' }}>
-              <p style={{ fontFamily: 'var(--font-mono-face)', fontSize: '10px', color: 'rgba(255,255,255,0.75)', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500 }}>
-                What happens after you submit
-              </p>
-            </div>
-            <div style={{ padding: '20px' }}>
-              {[
-                { step: '1', text: 'A Stellar smart contract escrow is deployed on your behalf.' },
-                { step: '2', text: 'Donors send USDC to the escrow — funds never reach your hands.' },
-                { step: '3', text: 'Your verifier signs a transaction confirming treatment completion.' },
-                { step: '4', text: 'The escrow automatically releases funds to the hospital account.' },
-              ].map(item => (
-                <div key={item.step} style={{ display: 'flex', gap: '12px', marginBottom: '14px', alignItems: 'flex-start' }}>
-                  <span style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-mono-face)', fontSize: '11px', flexShrink: 0, fontWeight: 500 }}>
-                    {item.step}
-                  </span>
-                  <p style={{ fontSize: '13px', lineHeight: 1.55, color: 'var(--muted-foreground)', fontWeight: 500 }}>{item.text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+        <Field label="Medical Condition">
+          <input
+            value={medicalCondition}
+            onChange={(e) => setMedicalCondition(e.target.value)}
+            style={inputStyle}
+          />
+        </Field>
 
-          <div style={{ backgroundColor: 'rgba(232,82,122,0.07)', border: '1.5px solid rgba(232,82,122,0.15)', borderRadius: '20px', padding: '18px' }}>
-            <p style={{ fontFamily: 'var(--font-mono-face)', fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '8px', fontWeight: 500 }}>Verifier requirements</p>
-            <p style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--muted-foreground)', fontWeight: 500 }}>
-              The verifier must be a registered Philippine hospital or accredited NGO with a verified Stellar address.
+        <Field label="Target Amount (USDC) *">
+          <input
+            type="number"
+            min="1"
+            value={targetAmount}
+            onChange={(e) => setTargetAmount(e.target.value)}
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="Cover Image">
+          <label style={uploadBoxStyle}>
+            <Upload size={18} color="var(--primary)" />
+            <span style={{ fontSize: "13px" }}>
+              {coverImage ? coverImage.name : "Click to upload"}
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setCoverImage(e.target.files?.[0] ?? null)}
+              style={{ display: "none" }}
+            />
+          </label>
+        </Field>
+
+        <Field label="Medical Documents (for verifier review)">
+          <label style={uploadBoxStyle}>
+            <Upload size={18} color="var(--primary)" />
+            <span style={{ fontSize: "13px" }}>
+              Click to upload (PDF or image, multiple allowed)
+            </span>
+            <input
+              type="file"
+              accept="application/pdf,image/*"
+              multiple
+              onChange={(e) =>
+                setMedicalDocs((prev) => [
+                  ...prev,
+                  ...Array.from(e.target.files ?? []),
+                ])
+              }
+              style={{ display: "none" }}
+            />
+          </label>
+          {medicalDocs.map((f, i) => (
+            <div
+              key={i}
+              style={{
+                fontSize: "12px",
+                color: "var(--muted-foreground)",
+                marginTop: "4px",
+              }}
+            >
+              {f.name}
+            </div>
+          ))}
+        </Field>
+
+        <Field label="Assign a Verifier *">
+          <select
+            value={verifierId}
+            onChange={(e) => setVerifierId(e.target.value)}
+            style={inputStyle}
+          >
+            <option value="">Select an approved verifier…</option>
+            {verifiers.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.verifier_org_name} ({v.verifier_org_type})
+              </option>
+            ))}
+          </select>
+          {verifiers.length === 0 && (
+            <p
+              style={{
+                fontSize: "12px",
+                color: "var(--muted-foreground)",
+                marginTop: "4px",
+              }}
+            >
+              No approved verifiers yet — one needs to register and be approved
+              before fundraisers can go live.
             </p>
-          </div>
-        </div>
-      </div>
+          )}
+        </Field>
 
-      <style>{`
-        @media (max-width: 800px) { .create-grid { grid-template-columns: 1fr !important; } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
-    </main>
-  )
+        <div>
+          <label style={labelStyle}>Milestones</label>
+          {milestones.map((m, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                gap: "8px",
+                marginBottom: "8px",
+                alignItems: "flex-start",
+              }}
+            >
+              <div
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                }}
+              >
+                <input
+                  placeholder="Milestone title (e.g. Surgery scheduled)"
+                  value={m.title}
+                  onChange={(e) => updateMilestone(i, "title", e.target.value)}
+                  style={inputStyle}
+                />
+                <input
+                  placeholder="Target amount (USDC, optional)"
+                  type="number"
+                  value={m.target_amount}
+                  onChange={(e) =>
+                    updateMilestone(i, "target_amount", e.target.value)
+                  }
+                  style={inputStyle}
+                />
+              </div>
+              {milestones.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => removeMilestone(i)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "8px",
+                  }}
+                >
+                  <X size={16} color="var(--muted-foreground)" />
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={addMilestone}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              background: "none",
+              border: "none",
+              color: "var(--primary)",
+              fontSize: "13px",
+              fontWeight: 700,
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            <Plus size={14} /> Add another milestone
+          </button>
+        </div>
+
+        {error && (
+          <p style={{ color: "#dc2626", fontSize: "13px" }}>{error}</p>
+        )}
+
+        <button
+          onClick={handleSubmit}
+          disabled={!canSubmit || submitting}
+          style={{
+            padding: "14px",
+            borderRadius: "100px",
+            border: "none",
+            backgroundColor: "var(--primary)",
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: "15px",
+            cursor: canSubmit ? "pointer" : "default",
+            opacity: canSubmit ? 1 : 0.5,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+          }}
+        >
+          {submitting ? (
+            <Loader2
+              size={16}
+              style={{ animation: "spin 0.8s linear infinite" }}
+            />
+          ) : (
+            <CheckCircle2 size={16} />
+          )}
+          {submitting ? "Creating…" : "Create Fundraiser"}
+        </button>
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
 }
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: "12px",
+  fontWeight: 700,
+  color: "var(--foreground)",
+  marginBottom: "6px",
+  fontFamily: "var(--font-heading)",
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "11px 14px",
+  borderRadius: "12px",
+  border: "1.5px solid rgba(232,82,122,0.3)",
+  fontSize: "14px",
+  fontFamily: "var(--font-body)",
+  backgroundColor: "#fff",
+  color: "var(--foreground)",
+  boxSizing: "border-box",
+};
+
+const uploadBoxStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+  padding: "12px 16px",
+  borderRadius: "12px",
+  border: "1.5px dashed rgba(232,82,122,0.35)",
+  backgroundColor: "#fff",
+  cursor: "pointer",
+};
