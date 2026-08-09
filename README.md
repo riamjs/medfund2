@@ -3,9 +3,9 @@
 **A transparent healthcare fundraising platform.**
 
 ---
-![Landing page](https://imgur.com/a/ULBSHG1)
+![Landing page](https://i.imgur.com/BjOjxHf.jpeg)
 
-![Browse](https://imgur.com/K6PY7xA)
+![Browse](https://i.imgur.com/K6PY7xA.jpeg)
 
 ## Problem
 
