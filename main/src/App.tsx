@@ -8,11 +8,13 @@ import Auth from "./pages/Auth.tsx"
 import DonationsTracker from "./pages/DonationsTracker.tsx"
 import ProfileSettings from "./pages/ProfileSettings.tsx"
 import Profile from "./pages/Profile.tsx"
+import VerifierRegister from "./pages/VerifierRegister.tsx"
 import { isConnected, requestAccess, getNetwork } from "@stellar/freighter-api"
 import { Horizon } from "@stellar/stellar-sdk"
 import { supabase } from "./integrations/supabase/client.ts"
 
-type View = "landing" | "browse" | "detail" | "create" | "auth" | "donations" | "profile"
+type View = "landing" | "browse" | "detail" | "create" | "auth" | "donations" | "profile" | "verifier-register"
+
 
 
 const horizon = new Horizon.Server("https://horizon-testnet.stellar.org")
@@ -189,6 +191,7 @@ export default function App() {
       {view === "auth" && <Auth onNavigate={handleNavigate} />}
       {view === "donations" && <DonationsTracker onNavigate={handleNavigate} />}
       {view === "profile" && <Profile onNavigate={handleNavigate} />}
+      {view === "verifier-register" && <VerifierRegister onNavigate={handleNavigate} />}
     </div>
 
       {/* Footer */}

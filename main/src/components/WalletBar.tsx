@@ -129,6 +129,7 @@ export default function WalletBar({
             { label: 'About', view: 'landing' },
             { label: 'Start a Fundraiser', view: 'create' },
             ...(session ? [{ label: 'My Donations', view: 'donations' }] : []),
+            ...(session ? [{ label: 'Become a Verifier', view: 'verifier-register' }] : []),
           ].map(({ label, view }) => (
             <button
               key={view + label}
