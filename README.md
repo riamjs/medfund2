@@ -1,11 +1,6 @@
-# MedFund
+<img width="1858" height="867" alt="image" src="https://github.com/user-attachments/assets/864e9e72-8581-4070-9f8f-da8dbcf7e332" /># MedFund
 
-**A transparent healthcare fundraising platform.**
-
----
-![Landing page](https://i.imgur.com/BjOjxHf.jpeg)
-
-![Browse](https://i.imgur.com/K6PY7xA.jpeg)
+**A transparent healthcare fundraising platform where donations are held in Stellar escrow and released only when a hospital or NGO confirms a treatment milestone.**
 
 ## Problem
 
@@ -13,7 +8,38 @@ A cancer patient in Quezon City faces ₱150,000 in hospital bills, but donors h
 
 ## Solution
 
-MedFund enables patients to launch verified fundraisers where donations are held in **Stellar escrow** and released only when hospitals or NGOs confirm treatment milestones — giving donors transparent, on-chain visibility of fund disbursement.
+MedFund lets patients launch verified fundraisers where donations sit in
+a Soroban smart-contract escrow. Funds are only released to the patient
+once a hospital or NGO verifies that a treatment milestone (e.g.,
+"surgery scheduled") has been reached. Every donation, verification, and
+release is visible on-chain, so donors can see exactly where their money
+goes and when.
+
+## Vision and Purpose
+
+Metro Manila and provincial hospital patients routinely face partial or
+delayed coverage from PhilHealth and NGOs. MedFund gives patients a
+credible way to raise emergency funds by removing the single biggest
+objection donors have: not knowing where the money goes. For hospitals
+and NGOs (Caritas Manila, Kythe Foundation, Philippine Red Cross), it
+offers faster, verifiable disbursement without waiting on reimbursement
+cycles. For overseas Filipino donors especially, it turns a leap of faith
+into a transaction they can audit.
+
+---
+### Landing Page 
+![Landing page](https://i.imgur.com/BjOjxHf.jpeg)
+
+### Browse Page
+![Browse](https://i.imgur.com/K6PY7xA.jpeg)
+
+### Connected Wallet State
+![Connect](https://i.imgur.com/SiLsYHV.jpeg)
+![Connected with Balance Displayed](https://i.imgur.com/RXuky2O.jpeg) 
+
+### Transaction
+![Confirm Transaction](https://imgur.com/SHT0oGA)
+![Show Transaction](https://imgur.com/KQWLvQ9)
 
 ## Stellar Features Used
 
